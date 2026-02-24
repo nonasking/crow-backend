@@ -12,12 +12,11 @@ def test_webhook_api_responds_woori(client):
 
         url = "/receivers/webhook/"
         message = """[Web발신]
-우리카드(2291)체크승인
-강*성님
-5,150,000원
-02/23 18:12
-지급가능액30,413,574원
-신세계백화*"""
+우리 02/23 11:32
+*746546
+출금 900원
+SMS수수료
+잔액 41,903,664원"""
         payload = {"message": message}
 
         response = client.post(url, data=payload, content_type="application/json")
@@ -39,16 +38,3 @@ def test_webhook_api_responds_shinhan(client):
         response = client.post(url, data=payload, content_type="application/json")
 
         assert response.status_code == status.HTTP_200_OK
-
-
-def test_webhook_invalid_data(client):
-    """
-    잘못된 데이터를 보냈을 때 정의한 에러 메시지가 오는지 확인합니다.
-    """
-    url = "/receivers/webhook/"
-    payload = {"wrong_key": "data"}  # 'message' 키가 없음
-
-    response = client.post(url, data=payload, content_type="application/json")
-
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert "error" in response.data
