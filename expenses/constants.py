@@ -145,6 +145,8 @@ CATEGORY_SUBCATEGORY_MAP: dict[str, list[str]] = {
     ],
 }
 
+DEFAULT_EXPENSE_CATEGORY = ExpenseCategoryEnum.UNSETTLED
+DEFAULT_EXPENSE_SUBCATEGORY = ExpenseSubCategoryEnum.UNSETTLED
 
 class ExpensePaymentMethodEnum(models.TextChoices):
     SHINHAN = "SHINHAN", "신한Big카드"
