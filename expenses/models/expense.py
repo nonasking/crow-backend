@@ -39,4 +39,4 @@ class Expense(models.Model):
         ordering = ["-spent_at", "-created_at"]
 
     def __str__(self):
-        return f"[{self.spent_at}] {self.item} {self.amount:,}원"
+        return f"[{self.spent_at}] {self.item} {self.amount:,}"
