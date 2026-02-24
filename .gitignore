@@ -6,6 +6,8 @@
 *.pot
 *.pyc
 __pycache__/
+*.py[cod]
+*$py.class
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
