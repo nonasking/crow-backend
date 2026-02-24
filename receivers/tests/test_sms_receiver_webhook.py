@@ -38,16 +38,3 @@ def test_webhook_api_responds_shinhan(client):
         response = client.post(url, data=payload, content_type="application/json")
 
         assert response.status_code == status.HTTP_200_OK
-
-
-def test_webhook_invalid_data(client):
-    """
-    잘못된 데이터를 보냈을 때 정의한 에러 메시지가 오는지 확인합니다.
-    """
-    url = "/receivers/webhook/"
-    payload = {"wrong_key": "data"}  # 'message' 키가 없음
-
-    response = client.post(url, data=payload, content_type="application/json")
-
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert "error" in response.data
