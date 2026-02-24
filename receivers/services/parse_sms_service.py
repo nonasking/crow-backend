@@ -91,7 +91,8 @@ class ParseSMSService:
         if len(lines) < 5:
             raise ValueError(ParseSMSErrorMessages.INVALID_FORMAT)
 
-        location = lines[-1].strip()
+        location = lines[-2].strip()
+
         return self._build_result(
             amount, location, ExpensePaymentMethodEnum.WOORI.label, payment_date
         )

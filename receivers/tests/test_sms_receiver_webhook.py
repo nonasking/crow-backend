@@ -12,12 +12,11 @@ def test_webhook_api_responds_woori(client):
 
         url = "/receivers/webhook/"
         message = """[Web발신]
-우리카드(2291)체크승인
-강*성님
-5,150,000원
-02/23 18:12
-지급가능액30,413,574원
-신세계백화*"""
+우리 02/23 11:32
+*746546
+출금 900원
+SMS수수료
+잔액 41,903,664원"""
         payload = {"message": message}
 
         response = client.post(url, data=payload, content_type="application/json")
