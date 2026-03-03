@@ -19,7 +19,8 @@ dependencies = [
     "drf-spectacular (>=0.29.0,<0.30.0)",
     "requests (>=2.32.5,<3.0.0)",
     "psycopg[binary] (>=3.3.3,<4.0.0)",
-    "gunicorn (>=25.1.0,<26.0.0)"
+    "gunicorn (>=25.1.0,<26.0.0)",
+    "django-filter (>=25.2,<26.0)"
 ]
 
 
