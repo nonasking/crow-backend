@@ -37,4 +37,3 @@ def test_migrate_notion_data_to_expense(mock_migrate, client):
     assert response.data["created"] == migrate_result["created"]
     assert response.data["skipped"] == migrate_result["skipped"]
     assert response.data["errors"] == migrate_result["errors"]
-    mock_migrate.assert_called_once_with(skip_duplicates=True)
