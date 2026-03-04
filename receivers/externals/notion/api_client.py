@@ -95,17 +95,9 @@ class NotionClient:
     # ──────────────────────────────────────────────
 
     def _fetch_all_pages(self) -> list[dict]:
-        """
-        Notion 데이터베이스의 모든 페이지를 페이지네이션하여 가져옵니다.
-
-        Returns:
-            Notion 페이지 객체 리스트
-        Raises:
-            RuntimeError: Notion API 요청 실패 시
-        """
         url = NOTION_DB_QUERY_URL.format(database_id=self.database_id)
         pages = []
-        payload: dict = {}
+        payload: dict = {"page_size": 100}  # 명시적으로 최대치 지정
 
         while True:
             try:
@@ -113,7 +105,7 @@ class NotionClient:
                     url,
                     headers=self._headers(),
                     json=payload,
-                    timeout=10,
+                    timeout=30,  # 10 → 30으로 늘리기
                 )
             except requests.RequestException as e:
                 raise RuntimeError(f"Notion API 요청 실패: {e}") from e
@@ -124,11 +116,10 @@ class NotionClient:
             data = response.json()
             pages.extend(data.get("results", []))
 
-            # 다음 페이지가 없으면 종료
             if not data.get("has_more"):
                 break
 
-            payload = {"start_cursor": data["next_cursor"]}
+            payload = {"page_size": 100, "start_cursor": data["next_cursor"]}
 
         return pages
 
