@@ -1,7 +1,10 @@
 from drf_spectacular.utils import extend_schema
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from expenses.models.expense import Expense
+from expenses.serializers.api_serializers import NotionMigrateSerializer
 from expenses.serializers.model_serializers import ExpenseSerializer
 
 
@@ -32,3 +35,17 @@ class ExpenseViewSet(ModelViewSet):
     @extend_schema(summary="Expense 삭제")
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="Notion data > Expense 모델로 마이그레이션",
+        request=NotionMigrateSerializer,
+    )
+    @action(detail=False, methods=["post"], url_path="migrate-from-notion")
+    def migrate_from_notion(self, request, *args, **kwargs):
+        serializer = NotionMigrateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            result = serializer.save()
+        except RuntimeError as e:
+            return Response({"detail": str(e)}, status=502)
+        return Response(result)
