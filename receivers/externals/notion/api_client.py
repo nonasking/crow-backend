@@ -97,7 +97,7 @@ class NotionClient:
     def _fetch_all_pages(self) -> list[dict]:
         url = NOTION_DB_QUERY_URL.format(database_id=self.database_id)
         pages = []
-        payload: dict = {"page_size": 100}  # 명시적으로 최대치 지정
+        payload: dict = {"page_size": 100}
 
         while True:
             try:
