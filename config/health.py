@@ -12,15 +12,11 @@ class HealthCheckAPIView(APIView):
             return Response(
                 {
                     "status": "ok",
-                    "database": "ok",
                 },
                 status=status.HTTP_200_OK,
             )
-        except Exception:
+        except Exception as e:
             return Response(
-                {
-                    "status": "error",
-                    "database": "error",
-                },
+                {"status": "error", "info": f"{e}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
