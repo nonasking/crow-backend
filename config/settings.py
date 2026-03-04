@@ -153,3 +153,5 @@ SPECTACULAR_SETTINGS = {
 NOTION_TOKEN = env('NOTION_TOKEN')
 NOTION_DATABASE_ID = env('NOTION_DATABASE_ID')
 NOTION_VERSION = env('NOTION_VERSION')
+NOTION_API_URL = "https://api.notion.com/v1/pages"
+NOTION_DB_QUERY_URL = f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query"
