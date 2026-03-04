@@ -105,7 +105,7 @@ class NotionClient:
                     url,
                     headers=self._headers(),
                     json=payload,
-                    timeout=30,  # 10 → 30으로 늘리기
+                    timeout=30,
                 )
             except requests.RequestException as e:
                 raise RuntimeError(f"Notion API 요청 실패: {e}") from e
