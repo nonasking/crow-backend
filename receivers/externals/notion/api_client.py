@@ -201,7 +201,7 @@ class NotionClient:
 
     def migrate_to_db(
         self,
-        skip_duplicates: bool = True,
+        skip_duplicates: bool = False,
         batch_size: int = 100,
     ) -> dict:
         """

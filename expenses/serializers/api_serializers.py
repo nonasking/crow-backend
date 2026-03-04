@@ -4,7 +4,7 @@ from receivers.externals.notion.api_client import NotionClient
 
 
 class NotionMigrateSerializer(serializers.Serializer):
-    skip_duplicates = serializers.BooleanField(default=True)
+    skip_duplicates = serializers.BooleanField(default=False)
 
     def save(self):
         skip_duplicates = self.validated_data["skip_duplicates"]
