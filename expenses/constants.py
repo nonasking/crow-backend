@@ -152,3 +152,4 @@ class ExpensePaymentMethodEnum(models.TextChoices):
     SHINHAN = "SHINHAN", "신한Big카드"
     WOORI = "WOORI", "우리은행통장"
     CASH = "CASH", "현금"
+    ETC = "ETC", "기타"
