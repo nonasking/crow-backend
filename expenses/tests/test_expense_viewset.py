@@ -4,7 +4,6 @@ import pytest
 from rest_framework import status
 
 from expenses.constants import ExpenseCategoryEnum, ExpensePaymentMethodEnum
-from expenses.models import Expense
 
 
 @pytest.mark.django_db
@@ -23,3 +22,19 @@ def test_create_expense(client):
     response = client.post(url, data=payload, content_type="application/json")
     assert response.status_code == status.HTTP_201_CREATED
     assert response.data["category"] == payload["category"]
+
+
+@pytest.mark.django_db
+@patch("receivers.externals.notion.api_client.NotionClient.migrate_to_db")
+def test_migrate_notion_data_to_expense(mock_migrate, client):
+    migrate_result = {"total": 3, "created": 2, "skipped": 1, "errors": []}
+    mock_migrate.return_value = migrate_result
+    url = "/expenses/migrate-from-notion/"
+    response = client.post(url, content_type="application/json")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["total"] == migrate_result["total"]
+    assert response.data["created"] == migrate_result["created"]
+    assert response.data["skipped"] == migrate_result["skipped"]
+    assert response.data["errors"] == migrate_result["errors"]
+    mock_migrate.assert_called_once_with(skip_duplicates=True)
