@@ -10,14 +10,14 @@ NOTION_API_URL = settings.NOTION_API_URL
 NOTION_DB_QUERY_URL = settings.NOTION_DB_QUERY_URL
 
 
-def _format_payment_date(payment_date: Optional[str]) -> str:
+def _format_spent_at(spent_at: Optional[str]) -> str:
     """
     MM/DD 형식을 YYYY-MM-DD 로 변환합니다.
     빈 문자열이거나 파싱 실패 시 오늘 날짜를 반환합니다.
     """
-    if not payment_date:
+    if not spent_at:
         return date.today().isoformat()
-    parts = payment_date.split("/")
+    parts = spent_at.split("/")
     if len(parts) != 2:
         return date.today().isoformat()
     try:
@@ -57,19 +57,19 @@ class NotionClient:
         Raises:
             RuntimeError: Notion API 요청 실패 시
         """
-        amount, place, card_company, payment_date = (
+        amount, item, payment_method, spent_at = (
             parse_result.get("amount"),
-            parse_result.get("place"),
-            parse_result.get("card_company"),
-            parse_result.get("payment_date"),
+            parse_result.get("item"),
+            parse_result.get("payment_method"),
+            parse_result.get("spent_at"),
         )
-        formatted_date = _format_payment_date(payment_date)
+        formatted_date = _format_spent_at(spent_at)
         payload = {
             "parent": {"database_id": self.database_id},
             "properties": {
-                "항목": {"title": [{"text": {"content": place}}]},
+                "항목": {"title": [{"text": {"content": item}}]},
                 "소분류": {"select": {"name": DEFAULT_EXPENSE_SUBCATEGORY.label}},
-                "결제방식": {"select": {"name": card_company}},
+                "결제방식": {"select": {"name": payment_method}},
                 "날짜": {"date": {"start": formatted_date}},
                 "수입": {"number": 0},
                 "지출": {"number": amount},

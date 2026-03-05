@@ -3,7 +3,11 @@ from unittest.mock import patch
 import pytest
 from rest_framework import status
 
+from expenses.constants import ExpenseCategoryEnum
+from expenses.models import Expense
 
+
+@pytest.mark.django_db
 def test_webhook_api_responds_woori(client):
     with patch(
         "receivers.externals.notion.api_client.NotionClient.create_card_record"
@@ -21,9 +25,15 @@ SMS수수료
 
         response = client.post(url, data=payload, content_type="application/json")
 
+        # TODO api 분리 후 로직 제거
+        created_expense = Expense.objects.last()
+        assert created_expense.item == "SMS수수료"
+        assert created_expense.category == ExpenseCategoryEnum.UNSETTLED
+
         assert response.status_code == status.HTTP_200_OK
 
 
+@pytest.mark.django_db
 def test_webhook_api_responds_shinhan(client):
     with patch(
         "receivers.externals.notion.api_client.NotionClient.create_card_record"
@@ -36,5 +46,10 @@ def test_webhook_api_responds_shinhan(client):
         payload = {"message": message}
 
         response = client.post(url, data=payload, content_type="application/json")
+
+        # TODO api 분리 후 로직 제거
+        created_expense = Expense.objects.last()
+        assert created_expense.item == "(일시불)02/23 세븐일레븐영"
+        assert created_expense.category == ExpenseCategoryEnum.UNSETTLED
 
         assert response.status_code == status.HTTP_200_OK
