@@ -5,6 +5,7 @@ receivers/services.py
 """
 
 import re
+from typing import Literal
 
 from expenses.constants import ExpensePaymentMethodEnum
 from receivers.constants import ParseSMSErrorMessages
@@ -16,34 +17,41 @@ class ParseSMSService:
 
     Usage:
         result = ParseSMSService(message).parse()
-        # result = {"amount": 2400, "place": "세븐일레븐", "card_company": "신한Big카드", "payment_date": "04/20"}
+        # result = {"amount": 2400, "item": "세븐일레븐", "payment_method": "신한Big카드", "spent_at": "04/20"}
     """
 
     def __init__(self, message: str):
         self.message = message
 
-    def parse(self) -> dict:
+    def parse(self, enum_representation: Literal["label", "value"] = "label") -> dict:
         """
         카드사를 자동 감지하여 문자를 파싱합니다.
 
         Returns:
-            {"amount": int, "place": str, "card_company": str, "payment_date": str}
+            {"amount": int, "item": str, "payment_method": str, "spent_at": str}
 
         Raises:
             ValueError: 파싱 실패 또는 지원하지 않는 카드사
         """
         if "[Web발신]\n신한카드" in self.message or "신한(" in self.message:
-            return self._parse_shinhan()
+            return self._parse_shinhan(enum_representation=enum_representation)
         if "[Web발신]\n우리" in self.message:
-            return self._parse_woori()
+            return self._parse_woori(enum_representation=enum_representation)
         raise ValueError(ParseSMSErrorMessages.UNSUPPORTED_COMPANY)
 
     # ------------------------------------------------------------------
     # 카드사별 파서
     # ------------------------------------------------------------------
 
-    def _parse_shinhan(self) -> dict:
-        payment_date = self._extract_payment_date()
+    def _parse_shinhan(
+        self,
+        enum_representation: Literal["label", "value"] = "value",
+    ) -> dict:
+        spent_at = self._extract_spent_at()
+        payment_method = getattr(
+            ExpensePaymentMethodEnum.SHINHAN,
+            enum_representation,
+        )
 
         # 패턴 1: "신한카드(xxxx)승인 ..." 형식
         if "신한카드" in self.message:
@@ -61,9 +69,7 @@ class ParseSMSService:
 
             location = re.sub(r"\d{2}:\d{2}\s+", "", location).strip()
 
-            return self._build_result(
-                amount, location, ExpensePaymentMethodEnum.SHINHAN.label, payment_date
-            )
+            return self._build_result(amount, location, payment_method, spent_at)
 
         # 패턴 2: "신한(xxxx)승인 ..." 형식 (민생회복 등)
         if "신한(" in self.message:
@@ -72,14 +78,20 @@ class ParseSMSService:
             location_match = re.search(r"\d{2}:\d{2}\s+([^잔액]+)", self.message)
             location = location_match.group(1).strip() if location_match else ""
 
-            return self._build_result(
-                amount, location, ExpensePaymentMethodEnum.SHINHAN.label, payment_date
-            )
+            return self._build_result(amount, location, payment_method, spent_at)
 
         raise ValueError(ParseSMSErrorMessages.INVALID_FORMAT)
 
-    def _parse_woori(self) -> dict:
-        payment_date = self._extract_payment_date()
+    def _parse_woori(
+        self,
+        enum_representation: Literal["label", "value"] = "value",
+    ) -> dict:
+        spent_at = self._extract_spent_at()
+
+        payment_method = getattr(
+            ExpensePaymentMethodEnum.SHINHAN,
+            enum_representation,
+        )
 
         match = re.search(r"([\d,]+)원", self.message)
         if not match:
@@ -93,9 +105,7 @@ class ParseSMSService:
 
         location = lines[-2].strip()
 
-        return self._build_result(
-            amount, location, ExpensePaymentMethodEnum.WOORI.label, payment_date
-        )
+        return self._build_result(amount, location, payment_method, spent_at)
 
     # ------------------------------------------------------------------
     # 공통 헬퍼
@@ -112,18 +122,18 @@ class ParseSMSService:
             raise ValueError(ParseSMSErrorMessages.INVALID_FORMAT)
         return amount, match.group(0)
 
-    def _extract_payment_date(self) -> str:
+    def _extract_spent_at(self) -> str:
         """MM/DD HH:MM 패턴에서 MM/DD를 추출합니다."""
         match = re.search(r"(\d{2}/\d{2})\s+\d{2}:\d{2}", self.message)
         return match.group(1) if match else ""
 
     @staticmethod
     def _build_result(
-        amount: int, place: str, card_company: str, payment_date: str
+        amount: int, item: str, payment_method: str, spent_at: str
     ) -> dict:
         return {
             "amount": amount,
-            "place": place,
-            "card_company": card_company,
-            "payment_date": payment_date,
+            "item": item,
+            "payment_method": payment_method,
+            "spent_at": spent_at,
         }
