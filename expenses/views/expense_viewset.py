@@ -8,7 +8,7 @@ from rest_framework.viewsets import ModelViewSet
 from expenses.constants import (
     ExpenseCategoryEnum,
     ExpensePaymentMethodEnum,
-    ExpenseSubCategoryEnum,
+    ExpenseSubCategoryEnum, CATEGORY_SUBCATEGORY_MAP,
 )
 from expenses.filters import ExpenseFilter
 from expenses.models.expense import Expense
@@ -92,5 +92,9 @@ class ExpenseViewSet(ModelViewSet):
                     {"value": value, "label": label}
                     for value, label in ExpensePaymentMethodEnum.choices
                 ],
+                "category_subcategory_map": {
+                    category: list(sub_categories)
+                    for category, sub_categories in CATEGORY_SUBCATEGORY_MAP.items()
+                },
             }
         )
