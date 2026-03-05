@@ -5,6 +5,11 @@ from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
+from expenses.constants import (
+    ExpenseCategoryEnum,
+    ExpensePaymentMethodEnum,
+    ExpenseSubCategoryEnum,
+)
 from expenses.filters import ExpenseFilter
 from expenses.models.expense import Expense
 from expenses.pagination import ExpensePagination
@@ -67,3 +72,25 @@ class ExpenseViewSet(ModelViewSet):
         except RuntimeError as e:
             return Response({"detail": str(e)}, status=502)
         return Response(result)
+
+    @extend_schema(
+        summary="카테고리 / 서브카테고리 / 결제수단 값 조회",
+    )
+    @action(detail=False, methods=["get"])
+    def options(self, request):
+        return Response(
+            {
+                "categories": [
+                    {"value": value, "label": label}
+                    for value, label in ExpenseCategoryEnum.choices
+                ],
+                "sub_categories": [
+                    {"value": value, "label": label}
+                    for value, label in ExpenseSubCategoryEnum.choices
+                ],
+                "payment_methods": [
+                    {"value": value, "label": label}
+                    for value, label in ExpensePaymentMethodEnum.choices
+                ],
+            }
+        )
