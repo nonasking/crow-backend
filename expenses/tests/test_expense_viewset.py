@@ -3,7 +3,12 @@ from unittest.mock import patch
 import pytest
 from rest_framework import status
 
-from expenses.constants import ExpenseCategoryEnum, ExpensePaymentMethodEnum
+from expenses.constants import (
+    ExpenseCategoryEnum,
+    ExpensePaymentMethodEnum,
+    ExpenseSubCategoryEnum,
+)
+from expenses.models.expense import Expense
 
 
 @pytest.mark.django_db
@@ -22,6 +27,33 @@ def test_create_expense(client):
     response = client.post(url, data=payload, content_type="application/json")
     assert response.status_code == status.HTTP_201_CREATED
     assert response.data["category"] == payload["category"]
+
+
+@pytest.mark.django_db
+def test_list_expense(client):
+    Expense.objects.create(
+        amount=1,
+        spent_at="2024-01-01",
+        category=ExpenseCategoryEnum.UNSETTLED,
+        sub_category=ExpenseSubCategoryEnum.UNSETTLED,
+    )
+    Expense.objects.create(
+        amount=1,
+        spent_at="2024-01-02",
+        category=ExpenseCategoryEnum.ALLOWANCE,
+        sub_category=ExpenseSubCategoryEnum.ALLOWANCE_MS,
+    )
+    Expense.objects.create(
+        amount=1,
+        spent_at="2024-01-03",
+        category=ExpenseCategoryEnum.UNSETTLED,
+        sub_category=ExpenseSubCategoryEnum.UNSETTLED,
+    )
+
+    url = "/expenses/"
+    response = client.get(f"{url}?category=UNSETTLED&sub_category=UNSETTLED")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data.get("count") == 2
 
 
 @pytest.mark.django_db
