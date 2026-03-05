@@ -53,7 +53,7 @@ def test_list_expense(client):
     url = "/expenses/"
     response = client.get(f"{url}?category=UNSETTLED&sub_category=UNSETTLED")
     assert response.status_code == status.HTTP_200_OK
-    assert response.get("count") == 2
+    assert response.data.get("count") == 2
 
 
 @pytest.mark.django_db
