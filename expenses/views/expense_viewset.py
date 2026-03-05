@@ -1,9 +1,13 @@
+from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import action
+from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
+from expenses.filters import ExpenseFilter
 from expenses.models.expense import Expense
+from expenses.pagination import ExpensePagination
 from expenses.serializers.api_serializers import NotionMigrateSerializer
 from expenses.serializers.model_serializers import ExpenseSerializer
 
@@ -11,6 +15,11 @@ from expenses.serializers.model_serializers import ExpenseSerializer
 class ExpenseViewSet(ModelViewSet):
     queryset = Expense.objects.all()
     serializer_class = ExpenseSerializer
+
+    pagination_class = ExpensePagination
+
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_class = ExpenseFilter
 
     @extend_schema(summary="Expense 생성")
     def create(self, request, *args, **kwargs):
