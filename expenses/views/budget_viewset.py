@@ -21,15 +21,6 @@ class BudgetViewSet(ModelViewSet):
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = BudgetFilter
 
-    ordering_fields = [
-        "spent_at",
-        "amount",
-        "category",
-        "sub_category",
-        "payment_method",
-    ]
-    ordering = ["-spent_at"]
-
     @extend_schema(summary="Budget 생성")
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
