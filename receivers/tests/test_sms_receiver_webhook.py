@@ -3,7 +3,7 @@ from unittest.mock import patch
 import pytest
 from rest_framework import status
 
-from expenses.constants import ExpenseCategoryEnum
+from expenses.constants import ExpenseCategoryEnum, ExpensePaymentMethodEnum
 from expenses.models import Expense
 
 
@@ -27,8 +27,10 @@ SMS수수료
 
         # TODO api 분리 후 로직 제거
         created_expense = Expense.objects.last()
+
         assert created_expense.item == "SMS수수료"
         assert created_expense.category == ExpenseCategoryEnum.UNSETTLED
+        assert created_expense.payment_method == ExpensePaymentMethodEnum.SHINHAN
 
         assert response.status_code == status.HTTP_200_OK
 

@@ -155,3 +155,10 @@ class ExpensePaymentMethodEnum(models.TextChoices):
     WOORI = "WOORI", "우리은행통장"
     CASH = "CASH", "현금"
     ETC = "ETC", "기타"
+
+    @classmethod
+    def from_label(cls, label):
+        for choice in cls:
+            if choice.label == label:
+                return choice.value
+        raise ValueError(f"Invalid label: {label}")
