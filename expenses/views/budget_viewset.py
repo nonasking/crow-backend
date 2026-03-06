@@ -8,7 +8,10 @@ from rest_framework.viewsets import ModelViewSet
 from expenses.filters import BudgetFilter
 from expenses.models import Budget
 from expenses.pagination import BudgetPagination
-from expenses.serializers.api_serializers import NotionBudgetMigrateSerializer
+from expenses.serializers.api_serializers import (
+    BudgetSummarySerializer,
+    NotionBudgetMigrateSerializer,
+)
 from expenses.serializers.model_serializers import BudgetSerializer
 
 
@@ -57,4 +60,18 @@ class BudgetViewSet(ModelViewSet):
             result = serializer.save()
         except RuntimeError as e:
             return Response({"detail": str(e)}, status=502)
+        return Response(result)
+
+    @extend_schema(summary="Budget 요약 조회")
+    @action(
+        detail=False,
+        methods=["get"],
+        serializer_class=BudgetSummarySerializer,
+    )
+    def summary(self, request):
+        serializer = self.get_serializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+
+        result = serializer.summary()
+
         return Response(result)
