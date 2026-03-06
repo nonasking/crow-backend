@@ -3,7 +3,11 @@ from datetime import date, datetime
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 
-from expenses.constants import ExpenseCategoryEnum, ExpenseSubCategoryEnum
+from expenses.constants import (
+    ExpenseCategoryEnum,
+    ExpensePaymentMethodEnum,
+    ExpenseSubCategoryEnum,
+)
 from expenses.models import Expense
 from receivers.constants import ParseSMSErrorMessages
 from receivers.externals.notion.api_client import NotionClient
@@ -41,6 +45,9 @@ class SMSReceiverPostSerializer(serializers.Serializer):
         parsed_result = self.parsed_result
         spent_at_str = parsed_result["spent_at"]
         parsed_result["spent_at"] = self._convert_spent_at(spent_at_str)
+        parsed_result["payment_method"] = ExpensePaymentMethodEnum.from_label(
+            parsed_result["payment_method"]
+        )
         Expense.objects.create(
             **parsed_result,
             category=ExpenseCategoryEnum.UNSETTLED,
