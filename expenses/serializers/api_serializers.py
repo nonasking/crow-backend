@@ -8,4 +8,4 @@ class NotionMigrateSerializer(serializers.Serializer):
 
     def save(self):
         skip_duplicates = self.validated_data["skip_duplicates"]
-        return NotionClient().migrate_to_db(skip_duplicates=skip_duplicates)
+        return NotionClient().migrate_expense_to_db(skip_duplicates=skip_duplicates)
