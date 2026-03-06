@@ -6,7 +6,7 @@ from expenses.views.expense_viewset import ExpenseViewSet
 
 router = DefaultRouter()
 
-router.register("", ExpenseViewSet)
+router.register("expenses", ExpenseViewSet)
 router.register("budget", BudgetViewSet)
 
 app_name = "expenses"
