@@ -14,7 +14,7 @@ from expenses.models.expense import Expense
 @pytest.mark.django_db
 def test_create_expense(client):
 
-    url = "/expenses/"
+    url = "/expenses/expenses/"
     payload = {
         "spent_at": "2024-05-20",
         "category": ExpenseCategoryEnum.PHONE_BILL,
@@ -50,18 +50,18 @@ def test_list_expense(client):
         sub_category=ExpenseSubCategoryEnum.UNSETTLED,
     )
 
-    url = "/expenses/"
+    url = "/expenses/expenses/"
     response = client.get(f"{url}?category=UNSETTLED&sub_category=UNSETTLED")
     assert response.status_code == status.HTTP_200_OK
     assert response.data.get("count") == 2
 
 
 @pytest.mark.django_db
-@patch("receivers.externals.notion.api_client.NotionClient.migrate_to_db")
+@patch("receivers.externals.notion.api_client.NotionClient.migrate_expense_to_db")
 def test_migrate_notion_data_to_expense(mock_migrate, client):
     migrate_result = {"total": 3, "created": 2, "skipped": 1, "errors": []}
     mock_migrate.return_value = migrate_result
-    url = "/expenses/migrate-from-notion/"
+    url = "/expenses/expenses/migrate-expenses-from-notion/"
     response = client.post(url, content_type="application/json")
 
     assert response.status_code == status.HTTP_200_OK

@@ -5,9 +5,12 @@ import requests
 from django.conf import settings
 
 from expenses.constants import DEFAULT_EXPENSE_CATEGORY, DEFAULT_EXPENSE_SUBCATEGORY
+from expenses.models import Budget
 
 NOTION_API_URL = settings.NOTION_API_URL
-NOTION_DB_QUERY_URL = settings.NOTION_DB_QUERY_URL
+NOTION_EXPENSE_DATABASE_ID = settings.NOTION_EXPENSE_DATABASE_ID
+NOTION_EXPENSE_DB_QUERY_URL = settings.NOTION_EXPENSE_DB_QUERY_URL
+NOTION_BUDGET_DB_QUERY_URL = settings.NOTION_BUDGET_DB_QUERY_URL
 
 
 def _format_spent_at(spent_at: Optional[str]) -> str:
@@ -33,11 +36,9 @@ class NotionClient:
     def __init__(
         self,
         token: Optional[str] = None,
-        database_id: Optional[str] = None,
         version: Optional[str] = None,
     ):
         self.token = token or settings.NOTION_TOKEN
-        self.database_id = database_id or settings.NOTION_DATABASE_ID
         self.version = version or settings.NOTION_VERSION
 
     def _headers(self) -> dict:
@@ -65,7 +66,7 @@ class NotionClient:
         )
         formatted_date = _format_spent_at(spent_at)
         payload = {
-            "parent": {"database_id": self.database_id},
+            "parent": {"database_id": NOTION_EXPENSE_DATABASE_ID},
             "properties": {
                 "항목": {"title": [{"text": {"content": item}}]},
                 "소분류": {"select": {"name": DEFAULT_EXPENSE_SUBCATEGORY.label}},
@@ -94,8 +95,7 @@ class NotionClient:
     # Notion → DB 마이그레이션
     # ──────────────────────────────────────────────
 
-    def _fetch_all_pages(self) -> list[dict]:
-        url = NOTION_DB_QUERY_URL.format(database_id=self.database_id)
+    def _fetch_all_pages(self, url) -> list[dict]:
         pages = []
         payload: dict = {"page_size": 100}
 
@@ -199,7 +199,135 @@ class NotionClient:
             "memo": memo,
         }
 
-    def migrate_to_db(
+    @staticmethod
+    def _parse_page_to_budget_data(page: dict) -> Optional[dict]:
+        """
+        Notion 페이지 객체를 Budget 모델 생성에 필요한 dict로 변환합니다.
+
+        Notion 필드 → Budget 필드 매핑:
+            연도(number)     → year
+            월(number)       → month
+            대분류(select)   → category      (enum value 변환)
+            소분류(select)   → sub_category  (enum value 변환)
+            예산(number)     → amount
+            비고(rich_text)  → memo
+
+        Returns:
+            Budget 생성용 dict, 필수 필드(연도/월) 누락 시 None
+        """
+        from expenses.constants import ExpenseCategoryEnum, ExpenseSubCategoryEnum
+
+        props = page.get("properties", {})
+
+        # ── 연도 (number) ─────────────────────────────
+        year = props.get("연도", {}).get("number")
+        if not year:
+            return None
+
+        # ── 월 (number) ───────────────────────────────
+        month = props.get("월", {}).get("number")
+        if not month or not (1 <= month <= 12):
+            return None
+
+        # ── 대분류 (select) → ExpenseCategoryEnum ─────
+        category_label = (props.get("대분류", {}).get("select") or {}).get("name", "")
+        category = _label_to_enum_value(
+            category_label,
+            ExpenseCategoryEnum,
+            DEFAULT_EXPENSE_CATEGORY,
+        )
+
+        # ── 소분류 (select) → ExpenseSubCategoryEnum ──
+        sub_label = (props.get("소분류", {}).get("select") or {}).get("name", "")
+        sub_category = _label_to_enum_value(
+            sub_label,
+            ExpenseSubCategoryEnum,
+            DEFAULT_EXPENSE_SUBCATEGORY,
+        )
+
+        # ── 예산 (number) ─────────────────────────────
+        amount = props.get("예산", {}).get("number") or 0
+
+        # ── 비고 (rich_text) ──────────────────────────
+        memo_list = props.get("비고", {}).get("title", [])
+        memo = memo_list[0]["text"]["content"] if memo_list else ""
+
+        return {
+            "year": int(year),
+            "month": int(month),
+            "category": category,
+            "sub_category": sub_category,
+            "amount": amount,
+            "memo": memo,
+        }
+
+    def migrate_budget_to_db(
+        self,
+        skip_duplicates: bool = True,
+        batch_size: int = 100,
+    ) -> dict:
+        """
+        Notion 예산 데이터베이스의 모든 레코드를 Django DB(Budget 모델)로 마이그레이션합니다.
+
+        Args:
+            budget_database_id: 예산 전용 Notion DB ID.
+                                None이면 기본 self.database_id 사용.
+            skip_duplicates:    True면 (year, month, category, sub_category) 조합이
+                                이미 DB에 존재하는 경우 건너뜁니다. (기본값 True)
+            batch_size:         bulk_create 단위 크기.
+
+        Returns:
+            {
+                "total": int,
+                "created": int,
+                "skipped": int,
+                "errors": list[str]
+            }
+        """
+        pages = self._fetch_all_pages(url=NOTION_BUDGET_DB_QUERY_URL)
+
+        total = len(pages)
+        to_create: list[Budget] = []
+        skipped = 0
+        errors: list[str] = []
+
+        for page in pages:
+            page_id = page.get("id", "unknown")
+            data = self._parse_page_to_budget_data(page)
+
+            if data is None:
+                errors.append(page_id)
+                skipped += 1
+                continue
+
+            if (
+                skip_duplicates
+                and Budget.objects.filter(
+                    year=data["year"],
+                    month=data["month"],
+                    category=data["category"],
+                    sub_category=data["sub_category"],
+                ).exists()
+            ):
+                skipped += 1
+                continue
+
+            to_create.append(Budget(**data))
+
+        created_count = 0
+        for i in range(0, len(to_create), batch_size):
+            batch = to_create[i : i + batch_size]
+            Budget.objects.bulk_create(batch)
+            created_count += len(batch)
+
+        return {
+            "total": total,
+            "created": created_count,
+            "skipped": skipped,
+            "errors": errors,
+        }
+
+    def migrate_expense_to_db(
         self,
         skip_duplicates: bool = False,
         batch_size: int = 100,
@@ -225,7 +353,7 @@ class NotionClient:
         """
         from expenses.models import Expense
 
-        pages = self._fetch_all_pages()
+        pages = self._fetch_all_pages(url=NOTION_EXPENSE_DB_QUERY_URL)
         total = len(pages)
 
         to_create: list[Expense] = []
