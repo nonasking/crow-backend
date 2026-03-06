@@ -1,7 +1,7 @@
 import django_filters
 from django.db.models import Q
 
-from expenses.models import Expense
+from expenses.models import Budget, Expense
 
 
 class ExpenseFilter(django_filters.FilterSet):
@@ -40,4 +40,23 @@ class ExpenseFilter(django_filters.FilterSet):
             "amount_min",
             "amount_max",
             "search",
+        ]
+
+
+class BudgetFilter(django_filters.FilterSet):
+    category = django_filters.BaseInFilter(field_name="category", lookup_expr="in")
+    sub_category = django_filters.BaseInFilter(
+        field_name="sub_category", lookup_expr="in"
+    )
+
+    year = django_filters.NumberFilter(field_name="year", lookup_expr="exact")
+    month = django_filters.NumberFilter(field_name="month", lookup_expr="exact")
+
+    class Meta:
+        model = Budget
+        fields = [
+            "category",
+            "sub_category",
+            "year",
+            "month",
         ]

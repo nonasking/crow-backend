@@ -13,7 +13,7 @@ from expenses.constants import (
 from expenses.filters import ExpenseFilter
 from expenses.models.expense import Expense
 from expenses.pagination import ExpensePagination
-from expenses.serializers.api_serializers import NotionMigrateSerializer
+from expenses.serializers.api_serializers import NotionExpenseMigrateSerializer
 from expenses.serializers.model_serializers import ExpenseSerializer
 
 
@@ -61,11 +61,11 @@ class ExpenseViewSet(ModelViewSet):
 
     @extend_schema(
         summary="Notion data > Expense 모델로 마이그레이션",
-        request=NotionMigrateSerializer,
+        request=NotionExpenseMigrateSerializer,
     )
-    @action(detail=False, methods=["post"], url_path="migrate-from-notion")
-    def migrate_from_notion(self, request, *args, **kwargs):
-        serializer = NotionMigrateSerializer(data=request.data)
+    @action(detail=False, methods=["post"], url_path="migrate-expenses-from-notion")
+    def migrate_expenses_from_notion(self, request, *args, **kwargs):
+        serializer = NotionExpenseMigrateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
             result = serializer.save()
