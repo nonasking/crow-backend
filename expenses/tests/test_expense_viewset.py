@@ -61,7 +61,7 @@ def test_list_expense(client):
 def test_migrate_notion_data_to_expense(mock_migrate, client):
     migrate_result = {"total": 3, "created": 2, "skipped": 1, "errors": []}
     mock_migrate.return_value = migrate_result
-    url = "/expenses/migrate-from-notion/"
+    url = "/expenses/migrate-expenses-from-notion/"
     response = client.post(url, content_type="application/json")
 
     assert response.status_code == status.HTTP_200_OK

@@ -249,7 +249,7 @@ class NotionClient:
         amount = props.get("예산", {}).get("number") or 0
 
         # ── 비고 (rich_text) ──────────────────────────
-        memo_list = props.get("비고", {}).get("rich_text", [])
+        memo_list = props.get("비고", {}).get("title", [])
         memo = memo_list[0]["text"]["content"] if memo_list else ""
 
         return {
