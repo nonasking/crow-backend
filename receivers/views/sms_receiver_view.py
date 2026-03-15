@@ -4,7 +4,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from receivers.serializers.sms_receiver_post_serializer import SMSReceiverPostSerializer
+from receivers.serializers.api_serializers import SMSReceiverPostSerializer
 
 
 class SMSReceiverView(APIView):
