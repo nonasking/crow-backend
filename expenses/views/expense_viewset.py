@@ -6,14 +6,18 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from expenses.constants import (
+    CATEGORY_SUBCATEGORY_MAP,
     ExpenseCategoryEnum,
     ExpensePaymentMethodEnum,
-    ExpenseSubCategoryEnum, CATEGORY_SUBCATEGORY_MAP,
+    ExpenseSubCategoryEnum,
 )
 from expenses.filters import ExpenseFilter
 from expenses.models.expense import Expense
 from expenses.pagination import ExpensePagination
-from expenses.serializers.api_serializers import NotionExpenseMigrateSerializer
+from expenses.serializers.api_serializers import (
+    ExpenseSummarySerializer,
+    NotionExpenseMigrateSerializer,
+)
 from expenses.serializers.model_serializers import ExpenseSerializer
 
 
@@ -98,3 +102,10 @@ class ExpenseViewSet(ModelViewSet):
                 },
             }
         )
+
+    @extend_schema(summary="지출 요약 조회")
+    @action(detail=False, methods=["get"], serializer_class=ExpenseSummarySerializer)
+    def summary(self, request):
+        serializer = self.get_serializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        return Response(serializer.summary())
