@@ -12,7 +12,7 @@ from expenses.models.expense import Expense
 
 
 @pytest.mark.django_db
-def test_create_expense(client):
+def test_create_expense(auth_client):
 
     url = "/expenses/expenses/"
     payload = {
@@ -24,13 +24,13 @@ def test_create_expense(client):
         "amount": 45000,
         "memo": "메모메모",
     }
-    response = client.post(url, data=payload, content_type="application/json")
+    response = auth_client.post(url, data=payload, content_type="application/json")
     assert response.status_code == status.HTTP_201_CREATED
     assert response.data["category"] == payload["category"]
 
 
 @pytest.mark.django_db
-def test_list_expense(client):
+def test_list_expense(auth_client):
     Expense.objects.create(
         amount=1,
         spent_at="2024-01-01",
@@ -51,18 +51,18 @@ def test_list_expense(client):
     )
 
     url = "/expenses/expenses/"
-    response = client.get(f"{url}?category=UNSETTLED&sub_category=UNSETTLED")
+    response = auth_client.get(f"{url}?category=UNSETTLED&sub_category=UNSETTLED")
     assert response.status_code == status.HTTP_200_OK
     assert response.data.get("count") == 2
 
 
 @pytest.mark.django_db
-@patch("receivers.externals.notion.api_client.NotionClient.migrate_expense_to_db")
-def test_migrate_notion_data_to_expense(mock_migrate, client):
+@patch("receivers.externals.notion.api_auth_client.Notionauth_client.migrate_expense_to_db")
+def test_migrate_notion_data_to_expense(mock_migrate, auth_client):
     migrate_result = {"total": 3, "created": 2, "skipped": 1, "errors": []}
     mock_migrate.return_value = migrate_result
     url = "/expenses/expenses/migrate-expenses-from-notion/"
-    response = client.post(url, content_type="application/json")
+    response = auth_client.post(url, content_type="application/json")
 
     assert response.status_code == status.HTTP_200_OK
     assert response.data["total"] == migrate_result["total"]

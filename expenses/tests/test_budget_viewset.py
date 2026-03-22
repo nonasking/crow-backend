@@ -6,7 +6,7 @@ from expenses.models import Budget
 
 
 @pytest.mark.django_db
-def test_list_budget(client):
+def test_list_budget(auth_client):
     Budget.objects.create(
         amount=1,
         year=2024,
@@ -30,6 +30,6 @@ def test_list_budget(client):
     )
 
     url = "/expenses/budget/"
-    response = client.get(f"{url}?category=UNSETTLED&sub_category=UNSETTLED")
+    response = auth_client.get(f"{url}?category=UNSETTLED&sub_category=UNSETTLED")
     assert response.status_code == status.HTTP_200_OK
     assert response.data.get("count") == 2

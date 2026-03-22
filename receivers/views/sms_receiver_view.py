@@ -1,5 +1,6 @@
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
+from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -8,6 +9,8 @@ from receivers.serializers.api_serializers import SMSReceiverPostSerializer
 
 
 class SMSReceiverView(APIView):
+    permission_classes = [AllowAny]
+
     @extend_schema(
         summary="카드 결제 SMS 수신",
         request=SMSReceiverPostSerializer,
