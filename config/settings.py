@@ -99,6 +99,8 @@ DATABASES = {
         "PASSWORD": env('DATABASE_PASSWORD'),
         "HOST": env('DATABASE_HOST'),
         "PORT": env('DATABASE_PORT'),
+        "OPTIONS": {"sslmode": "require"},
+        "CONN_MAX_AGE": 0,
     }
 }
 
