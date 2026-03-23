@@ -99,7 +99,7 @@ DATABASES = {
         "PASSWORD": env('DATABASE_PASSWORD'),
         "HOST": env('DATABASE_HOST'),
         "PORT": env('DATABASE_PORT'),
-        "OPTIONS": {"sslmode": "require"},
+        "OPTIONS": {"sslmode": "require", "options": "-c search_path=public"},
         "CONN_MAX_AGE": 0,
     }
 }
