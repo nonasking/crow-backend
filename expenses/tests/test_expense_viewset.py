@@ -57,7 +57,7 @@ def test_list_expense(auth_client):
 
 
 @pytest.mark.django_db
-@patch("receivers.externals.notion.api_auth_client.Notionauth_client.migrate_expense_to_db")
+@patch("receivers.externals.notion.api_client.NotionClient.migrate_expense_to_db")
 def test_migrate_notion_data_to_expense(mock_migrate, auth_client):
     migrate_result = {"total": 3, "created": 2, "skipped": 1, "errors": []}
     mock_migrate.return_value = migrate_result

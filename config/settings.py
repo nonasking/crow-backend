@@ -99,7 +99,11 @@ DATABASES = {
         "PASSWORD": env('DATABASE_PASSWORD'),
         "HOST": env('DATABASE_HOST'),
         "PORT": env('DATABASE_PORT'),
-        "OPTIONS": {"sslmode": "require", "options": "-c search_path=public"},
+        **({
+            "OPTIONS": {"sslmode": "require", "options": "-c search_path=public"}
+           } if DJANGO_ENV not in ("local", "test") else {
+            "OPTIONS": {"options": "-c search_path=public"}
+        }),
         "CONN_MAX_AGE": 0,
     }
 }
