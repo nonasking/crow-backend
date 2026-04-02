@@ -99,7 +99,11 @@ DATABASES = {
         "PASSWORD": env('DATABASE_PASSWORD'),
         "HOST": env('DATABASE_HOST'),
         "PORT": env('DATABASE_PORT'),
-        "OPTIONS": {"sslmode": "require", "options": "-c search_path=public"},
+        **({
+            "OPTIONS": {"sslmode": "require", "options": "-c search_path=public"}
+           } if DJANGO_ENV not in ("local", "test") else {
+            "OPTIONS": {"options": "-c search_path=public"}
+        }),
         "CONN_MAX_AGE": 0,
     }
 }
@@ -174,6 +178,16 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "카드 결제 문자 수신 및 Notion 연동 API 문서",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    "SECURITY": [{"BearerAuth": []}],
+    "COMPONENTS": {
+        "securitySchemes": {
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+            }
+        }
+    },
 }
 
 
