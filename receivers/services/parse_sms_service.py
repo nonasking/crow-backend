@@ -89,7 +89,7 @@ class ParseSMSService:
         spent_at = self._extract_spent_at()
 
         payment_method = getattr(
-            ExpensePaymentMethodEnum.SHINHAN,
+            ExpensePaymentMethodEnum.WOORI,
             enum_representation,
         )
 
