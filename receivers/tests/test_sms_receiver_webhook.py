@@ -30,7 +30,7 @@ SMS수수료
 
         assert created_expense.item == "SMS수수료"
         assert created_expense.category == ExpenseCategoryEnum.UNSETTLED
-        assert created_expense.payment_method == ExpensePaymentMethodEnum.SHINHAN
+        assert created_expense.payment_method == ExpensePaymentMethodEnum.WOORI
 
         assert response.status_code == status.HTTP_200_OK
 
