@@ -3,6 +3,7 @@ from rest_framework import serializers
 from expenses.constants import CATEGORY_SUBCATEGORY_MAP
 from expenses.models import Budget
 from expenses.models.expense import Expense
+from expenses.services.budget_service import BudgetService
 
 
 class ExpenseSerializer(serializers.ModelSerializer):
@@ -66,7 +67,19 @@ class BudgetSerializer(serializers.ModelSerializer):
         sub_category = attrs.get(
             "sub_category", instance.sub_category if instance else None
         )
+        year = attrs.get("year", instance.year if instance else None)
+        month = attrs.get("month", instance.month if instance else None)
+        amount = attrs.get("amount", instance.amount if instance else None)
 
+        # 연도 범위 검증 (BR-02)
+        if year is not None:
+            BudgetService.validate_year_range(year)
+
+        # 금액 양수 검증 (BR-04)
+        if amount is not None:
+            BudgetService.validate_amount_positive(amount)
+
+        # 카테고리-소분류 매핑 검증 (BR-01)
         if category and sub_category:
             allowed_subs = CATEGORY_SUBCATEGORY_MAP.get(category, [])
             if sub_category not in allowed_subs:
@@ -79,5 +92,16 @@ class BudgetSerializer(serializers.ModelSerializer):
                         )
                     }
                 )
+
+        # 중복 예산 사전 검증 (BR-05)
+        if year is not None and month is not None and category and sub_category:
+            exclude_id = instance.id if instance else None
+            BudgetService.check_duplicate_budget(
+                year=year,
+                month=month,
+                category=category,
+                sub_category=sub_category,
+                exclude_id=exclude_id,
+            )
 
         return attrs
