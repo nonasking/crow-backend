@@ -1,6 +1,8 @@
+from django.db import IntegrityError
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
@@ -20,6 +22,24 @@ class BudgetViewSet(ModelViewSet):
 
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = BudgetFilter
+    ordering_fields = ["year", "month", "category", "amount", "created_at"]
+    ordering = ["-year", "-month", "category"]
+
+    def perform_create(self, serializer):
+        try:
+            serializer.save()
+        except IntegrityError:
+            raise ValidationError(
+                "해당 연도/월/카테고리/소분류 조합의 예산이 이미 존재합니다."
+            )
+
+    def perform_update(self, serializer):
+        try:
+            serializer.save()
+        except IntegrityError:
+            raise ValidationError(
+                "해당 연도/월/카테고리/소분류 조합의 예산이 이미 존재합니다."
+            )
 
     @extend_schema(summary="Budget 생성")
     def create(self, request, *args, **kwargs):
