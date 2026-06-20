@@ -51,7 +51,7 @@ def test_webhook_api_responds_shinhan(client):
 
         # TODO api 분리 후 로직 제거
         created_expense = Expense.objects.last()
-        assert created_expense.item == "(일시불)02/23 세븐일레븐영"
+        assert created_expense.item == "세븐일레븐영"
         assert created_expense.category == ExpenseCategoryEnum.UNSETTLED
 
         assert response.status_code == status.HTTP_200_OK

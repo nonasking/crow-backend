@@ -10,6 +10,54 @@ from typing import Literal
 from expenses.constants import ExpensePaymentMethodEnum
 from receivers.constants import ParseSMSErrorMessages
 
+# SMS 가맹점명 정규화용 정규식
+# 예) "(일시불)06/20 카페63도" / "(할부3개월)06/03 20:52 (주)이마트"
+#  - 그룹1: 마커 + 날짜(+선택적 시간)를 걷어낸 나머지(가맹점명)
+_SMS_MERCHANT_PATTERN = re.compile(
+    r"^\((?:일시불|할부[^)]*)\)\s*\d{1,2}/\d{1,2}\s*(?:\d{1,2}:\d{2}\s*)?(.*)$"
+)
+
+# 법인격 표기 제거용 정규식: "(주)", "주식회사", "㈜"
+_CORPORATE_FORM_PATTERN = re.compile(r"\(주\)|주식회사|㈜")
+
+
+def normalize_merchant(item: str) -> str:
+    """SMS 포맷의 가맹점 항목 문자열을 깨끗한 가맹점명으로 정규화합니다.
+
+    `(일시불)`/`(할부 N개월)` 마커와 앞쪽 날짜(`MM/DD`), 선택적 시간(`HH:MM`)을
+    제거하고 법인격 표기(`(주)`, `주식회사`, `㈜`)를 제거한 뒤 공백을 정리합니다.
+
+    SMS 포맷에 매칭되지 않는 입력(PLAIN/OLD/잔액 행 등)은 **원본 그대로** 반환합니다.
+
+    Args:
+        item: 원본 항목 문자열.
+
+    Returns:
+        정규화된 가맹점명. 매칭 실패 시 입력 그대로.
+
+    Examples:
+        >>> normalize_merchant("(일시불)06/20 카페63도")
+        '카페63도'
+        >>> normalize_merchant("(일시불)05/31 18:28 홈플러스익스")
+        '홈플러스익스'
+        >>> normalize_merchant("(할부3개월)06/03 20:52 (주)이마트")
+        '이마트'
+        >>> normalize_merchant("식재료")
+        '식재료'
+    """
+    if not item:
+        return item
+
+    match = _SMS_MERCHANT_PATTERN.match(item)
+    if not match:
+        # PLAIN/OLD/잔액 행 등 SMS 포맷이 아니면 변경하지 않는다.
+        return item
+
+    merchant = match.group(1)
+    merchant = _CORPORATE_FORM_PATTERN.sub("", merchant)
+    merchant = re.sub(r"\s+", " ", merchant).strip()
+    return merchant
+
 
 class ParseSMSService:
     """
@@ -67,7 +115,7 @@ class ParseSMSService:
             if idx != -1:
                 location = location[:idx].strip()
 
-            location = re.sub(r"\d{2}:\d{2}\s+", "", location).strip()
+            location = normalize_merchant(location)
 
             return self._build_result(amount, location, payment_method, spent_at)
 
@@ -77,6 +125,7 @@ class ParseSMSService:
 
             location_match = re.search(r"\d{2}:\d{2}\s+([^잔액]+)", self.message)
             location = location_match.group(1).strip() if location_match else ""
+            location = normalize_merchant(location)
 
             return self._build_result(amount, location, payment_method, spent_at)
 
@@ -103,7 +152,7 @@ class ParseSMSService:
         if len(lines) < 5:
             raise ValueError(ParseSMSErrorMessages.INVALID_FORMAT)
 
-        location = lines[-2].strip()
+        location = normalize_merchant(lines[-2].strip())
 
         return self._build_result(amount, location, payment_method, spent_at)
 
