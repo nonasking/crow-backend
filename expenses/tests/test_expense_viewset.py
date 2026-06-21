@@ -57,6 +57,26 @@ def test_list_expense(auth_client):
 
 
 @pytest.mark.django_db
+def test_auto_classified_is_read_only_on_create(auth_client):
+    # PATCH/POST 로 auto_classified 를 못 바꾼다 (read_only_fields).
+    url = "/expenses/expenses/"
+    payload = {
+        "spent_at": "2024-05-20",
+        "category": ExpenseCategoryEnum.PHONE_BILL,
+        "sub_category": ExpenseSubCategoryEnum.PHONE_BILL,
+        "item": "통신비",
+        "payment_method": ExpensePaymentMethodEnum.WOORI,
+        "amount": 45000,
+        "auto_classified": True,  # 무시되어야 함
+    }
+    response = auth_client.post(url, data=payload, content_type="application/json")
+    assert response.status_code == status.HTTP_201_CREATED
+    assert response.data["auto_classified"] is False
+    created = Expense.objects.get(id=response.data["id"])
+    assert created.auto_classified is False
+
+
+@pytest.mark.django_db
 @patch("receivers.externals.notion.api_client.NotionClient.migrate_expense_to_db")
 def test_migrate_notion_data_to_expense(mock_migrate, auth_client):
     migrate_result = {"total": 3, "created": 2, "skipped": 1, "errors": []}
