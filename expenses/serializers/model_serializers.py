@@ -18,9 +18,11 @@ class ExpenseSerializer(serializers.ModelSerializer):
             "payment_method",
             "amount",
             "memo",
+            "auto_classified",
             "created_at",
             "updated_at",
         ]
+        read_only_fields = ["auto_classified"]
 
     def validate(self, attrs):
         # PATCH 시 부분 업데이트 고려 — 기존 값 fallback

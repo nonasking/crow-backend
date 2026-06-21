@@ -30,6 +30,11 @@ class Expense(models.Model):
     )
     amount = models.IntegerField(verbose_name="지출")
     memo = models.TextField(blank=True, default="", verbose_name="비고")
+    auto_classified = models.BooleanField(
+        default=False,
+        verbose_name="자동분류여부",
+        help_text="결정성 기반 자동분류 규칙으로 채워진 행이면 True. 수동 분류분은 False.",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
