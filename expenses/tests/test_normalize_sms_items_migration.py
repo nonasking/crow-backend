@@ -4,16 +4,24 @@ pytest-django-migrator 같은 헬퍼 플러그인이 없으므로 Django의
 MigrationExecutor 로 직접 0004(백업 테이블 직후) <-> 0005(정규화 적용) 상태를
 오가며 forwards/backwards/idempotency/비대상 미변경을 검증한다.
 
-주의: 마이그레이션 상태를 바꾸므로 transaction=True 가 필요하다.
+주의:
+- 마이그레이션 상태를 바꾸므로 transaction=True 가 필요하다.
+- 시드/조회는 반드시 **해당 마이그레이션 상태의 historical 모델**을 사용한다.
+  (글로벌 모델은 0006 에서 추가된 auto_classified 컬럼을 포함하므로, 0004/0005
+  상태 테이블에 대고 쓰면 'column does not exist' 로 깨진다.)
+- teardown 은 다른 테스트를 위해 **최신(0006)** 상태로 복귀시킨다.
 """
+
+import importlib
 
 import pytest
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 
 APP = "expenses"
-BEFORE = "0004_expenseitembackup"   # 정규화 적용 전 (백업 테이블만 존재)
-AFTER = "0005_normalize_sms_items"  # 정규화 적용 후
+BEFORE = "0004_expenseitembackup"     # 정규화 적용 전 (백업 테이블만 존재)
+AFTER = "0005_normalize_sms_items"    # 정규화 적용 후
+LATEST = "0006_expense_auto_classified"  # 스위트 다른 테스트용 최신 상태
 
 # 마이그레이션 대상 / 비대상 시드 데이터
 # (item, expected_after_forwards)
@@ -34,15 +42,22 @@ SEED = [
 def _migrate_to(target):
     executor = MigrationExecutor(connection)
     executor.migrate([(APP, target)])
-    # 새 상태 모델 그래프 갱신
-    executor.loader.build_graph()
 
 
-def _seed_expenses(apps_state_model_getter):
-    Expense = apps_state_model_getter("Expense")
+def _state_apps(target):
+    """target 마이그레이션 상태의 historical apps 레지스트리."""
+    executor = MigrationExecutor(connection)
+    return executor.loader.project_state((APP, target)).apps
+
+
+def _model(target, name):
+    return _state_apps(target).get_model(APP, name)
+
+
+def _seed(model):
     created = []
     for item, _ in SEED:
-        obj = Expense.objects.create(
+        obj = model.objects.create(
             spent_at="2024-06-20",
             category="ETC",
             sub_category="ETC",
@@ -54,17 +69,6 @@ def _seed_expenses(apps_state_model_getter):
     return created
 
 
-@pytest.fixture
-def historical_model():
-    """현재(=최신) 상태의 Expense/ExpenseItemBackup 모델 getter."""
-    from django.apps import apps
-
-    def _get(name):
-        return apps.get_model(APP, name)
-
-    return _get
-
-
 @pytest.mark.django_db(transaction=True)
 class TestNormalizeSmsItemsMigration:
 
@@ -73,28 +77,29 @@ class TestNormalizeSmsItemsMigration:
         _migrate_to(BEFORE)
 
     def teardown_method(self, method):
-        # 다른 테스트에 영향 없도록 최신 상태로 복귀
-        _migrate_to(AFTER)
+        # 다른 테스트에 영향 없도록 최신 상태로 복귀 (스키마 복원)
+        _migrate_to(LATEST)
 
     # ── forwards ───────────────────────────────────────────
-    def test_forwards_normalizes_only_sms_rows(self, historical_model):
-        Expense = historical_model("Expense")
-        ids = _seed_expenses(historical_model)
+    def test_forwards_normalizes_only_sms_rows(self):
+        ids = _seed(_model(BEFORE, "Expense"))
 
         _migrate_to(AFTER)
 
+        Expense = _model(AFTER, "Expense")
         for idx, (original, expected) in enumerate(SEED):
             obj = Expense.objects.get(id=ids[idx])
             assert obj.item == expected, (
                 f"{original!r} -> {obj.item!r}, expected {expected!r}"
             )
 
-    def test_forwards_backs_up_only_changed_rows(self, historical_model):
-        Expense = historical_model("Expense")
-        Backup = historical_model("ExpenseItemBackup")
-        ids = _seed_expenses(historical_model)
+    def test_forwards_backs_up_only_changed_rows(self):
+        ids = _seed(_model(BEFORE, "Expense"))
 
         _migrate_to(AFTER)
+
+        Expense = _model(AFTER, "Expense")
+        Backup = _model(AFTER, "ExpenseItemBackup")
 
         # SEED 중 실제로 바뀌는 행 = 3건
         changed = [s for s in SEED if s[0] != s[1]]
@@ -103,43 +108,38 @@ class TestNormalizeSmsItemsMigration:
         # 백업의 original/normalized 정확성
         for backup in Backup.objects.all():
             assert backup.original_item != backup.normalized_item
-            # 현재 expense.item == normalized
             exp = Expense.objects.get(id=backup.expense_id)
             assert exp.item == backup.normalized_item
 
-    def test_forwards_does_not_touch_non_candidates(self, historical_model):
-        Expense = historical_model("Expense")
-        ids = _seed_expenses(historical_model)
+    def test_forwards_does_not_touch_non_candidates(self):
+        ids = _seed(_model(BEFORE, "Expense"))
 
         _migrate_to(AFTER)
 
-        # PLAIN/OLD/잔액/'(주)이마트' 는 그대로
+        Expense = _model(AFTER, "Expense")
         unchanged = {s[0] for s in SEED if s[0] == s[1]}
         items = set(Expense.objects.filter(id__in=ids).values_list("item", flat=True))
         assert unchanged.issubset(items)
 
     # ── idempotency ────────────────────────────────────────
-    def test_forwards_idempotent(self, historical_model):
+    def test_forwards_idempotent(self):
         """0005 forwards 를 직접 한 번 더 호출해도 무변화 + 백업 중복 없음."""
-        import importlib
-
-        from django.apps import apps as global_apps
-
-        Expense = historical_model("Expense")
-        Backup = historical_model("ExpenseItemBackup")
-        ids = _seed_expenses(historical_model)
+        ids = _seed(_model(BEFORE, "Expense"))
 
         _migrate_to(AFTER)
+        Expense = _model(AFTER, "Expense")
+        Backup = _model(AFTER, "ExpenseItemBackup")
+
         first_items = dict(
             Expense.objects.filter(id__in=ids).values_list("id", "item")
         )
         first_backup_count = Backup.objects.count()
 
-        # 마이그레이션 모듈의 forwards 를 그대로 재호출 (RunPython 2회 적용 모사).
+        # 마이그레이션 모듈의 forwards 를 AFTER 상태 apps 로 재호출 (RunPython 2회 모사).
         mig = importlib.import_module(
             "expenses.migrations.0005_normalize_sms_items"
         )
-        mig.forwards(global_apps, None)
+        mig.forwards(_state_apps(AFTER), None)
 
         second_items = dict(
             Expense.objects.filter(id__in=ids).values_list("id", "item")
@@ -149,21 +149,20 @@ class TestNormalizeSmsItemsMigration:
         assert Backup.objects.count() == first_backup_count
 
     # ── backwards ──────────────────────────────────────────
-    def test_backwards_restores_originals(self, historical_model):
-        Expense = historical_model("Expense")
-        Backup = historical_model("ExpenseItemBackup")
-        ids = _seed_expenses(historical_model)
+    def test_backwards_restores_originals(self):
+        ids = _seed(_model(BEFORE, "Expense"))
 
         _migrate_to(AFTER)
-        assert Backup.objects.count() == 3
+        assert _model(AFTER, "ExpenseItemBackup").objects.count() == 3
 
         # 되돌리기
         _migrate_to(BEFORE)
 
+        Expense = _model(BEFORE, "Expense")
         for idx, (original, _expected) in enumerate(SEED):
             obj = Expense.objects.get(id=ids[idx])
             assert obj.item == original, (
                 f"restore failed: got {obj.item!r}, expected {original!r}"
             )
         # 백업은 정리됨
-        assert Backup.objects.count() == 0
+        assert _model(BEFORE, "ExpenseItemBackup").objects.count() == 0
