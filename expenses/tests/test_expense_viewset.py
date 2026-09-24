@@ -89,3 +89,53 @@ def test_migrate_notion_data_to_expense(mock_migrate, auth_client):
     assert response.data["created"] == migrate_result["created"]
     assert response.data["skipped"] == migrate_result["skipped"]
     assert response.data["errors"] == migrate_result["errors"]
+
+
+@pytest.mark.django_db
+def test_summary_spans_multiple_months(auth_client):
+    from expenses.models import Budget
+
+    for spent_at, amount in [
+        ("2024-12-31", 999),  # 기간 밖
+        ("2025-01-01", 100),
+        ("2025-06-15", 200),
+        ("2026-08-15", 300),
+        ("2026-08-16", 999),  # 기간 밖
+    ]:
+        Expense.objects.create(
+            amount=amount,
+            spent_at=spent_at,
+            category=ExpenseCategoryEnum.UNSETTLED,
+            sub_category=ExpenseSubCategoryEnum.UNSETTLED,
+        )
+    Budget.objects.create(year=2025, month=1, amount=31000)
+    Budget.objects.create(year=2026, month=8, amount=31000)
+    Budget.objects.create(year=2026, month=9, amount=99999)  # 기간 밖
+
+    response = auth_client.get(
+        "/expenses/expenses/summary/"
+        "?year=2025&month=1&spent_at_after=2025-01-01&spent_at_before=2026-08-15"
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["total_spent"] == 600
+    assert response.data["count"] == 3
+    assert response.data["total_budget"] == 62000
+    # 2025-01 전체(31000) + 2026-08의 15일치(15000)
+    assert response.data["daily_budget"] == 46000
+
+
+@pytest.mark.django_db
+def test_summary_single_month_range_is_prorated(auth_client):
+    from expenses.models import Budget
+
+    Budget.objects.create(year=2026, month=3, amount=31000)
+
+    response = auth_client.get(
+        "/expenses/expenses/summary/"
+        "?year=2026&month=3&spent_at_after=2026-03-01&spent_at_before=2026-03-10"
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["total_budget"] == 31000
+    assert response.data["daily_budget"] == 10000
