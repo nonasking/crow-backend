@@ -20,6 +20,8 @@ _SMS_MERCHANT_PATTERN = re.compile(
 # 법인격 표기 제거용 정규식: "(주)", "주식회사", "㈜"
 _CORPORATE_FORM_PATTERN = re.compile(r"\(주\)|주식회사|㈜")
 
+_WHITESPACE_PATTERN = re.compile(r"\s+")
+
 
 def normalize_merchant(item: str) -> str:
     """SMS 포맷의 가맹점 항목 문자열을 깨끗한 가맹점명으로 정규화합니다.
@@ -55,7 +57,7 @@ def normalize_merchant(item: str) -> str:
 
     merchant = match.group(1)
     merchant = _CORPORATE_FORM_PATTERN.sub("", merchant)
-    merchant = re.sub(r"\s+", " ", merchant).strip()
+    merchant = _WHITESPACE_PATTERN.sub(" ", merchant).strip()
     return merchant
 
 

@@ -22,10 +22,8 @@ class SMSReceiverPostSerializer(serializers.Serializer):
         메시지 파싱이 가능한지 검증합니다.
         """
         try:
-            service = ParseSMSService(value)
             # 파싱 결과를 인스턴스 변수에 임시 저장하여 나중에 활용
-            self.parsed_result = service.parse()
-            self.parsed_result_for_db = service.parse(enum_representation="value")
+            self.parsed_result = ParseSMSService(value).parse()
         except ValueError as e:
             raise ValidationError(f"{ParseSMSErrorMessages.PARSE_FAILED}{str(e)}")
 

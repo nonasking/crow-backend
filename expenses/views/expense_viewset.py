@@ -82,20 +82,14 @@ class ExpenseViewSet(ModelViewSet):
     )
     @action(detail=False, methods=["get"])
     def options(self, request):
+        def to_options(enum):
+            return [{"value": value, "label": label} for value, label in enum.choices]
+
         return Response(
             {
-                "categories": [
-                    {"value": value, "label": label}
-                    for value, label in ExpenseCategoryEnum.choices
-                ],
-                "sub_categories": [
-                    {"value": value, "label": label}
-                    for value, label in ExpenseSubCategoryEnum.choices
-                ],
-                "payment_methods": [
-                    {"value": value, "label": label}
-                    for value, label in ExpensePaymentMethodEnum.choices
-                ],
+                "categories": to_options(ExpenseCategoryEnum),
+                "sub_categories": to_options(ExpenseSubCategoryEnum),
+                "payment_methods": to_options(ExpensePaymentMethodEnum),
                 "category_subcategory_map": {
                     category: list(sub_categories)
                     for category, sub_categories in CATEGORY_SUBCATEGORY_MAP.items()

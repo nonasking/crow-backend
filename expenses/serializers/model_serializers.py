@@ -6,7 +6,30 @@ from expenses.models.expense import Expense
 from expenses.services.budget_service import BudgetService
 
 
-class ExpenseSerializer(serializers.ModelSerializer):
+class CategoryValidationMixin:
+    def _resolve(self, attrs, field):
+        # PATCH 시 부분 업데이트 고려 — 기존 값 fallback
+        return attrs.get(field, getattr(self.instance, field, None))
+
+    @staticmethod
+    def _check_category_subcategory(category, sub_category):
+        if not (category and sub_category):
+            return
+
+        allowed_subs = CATEGORY_SUBCATEGORY_MAP.get(category, [])
+        if sub_category not in allowed_subs:
+            raise serializers.ValidationError(
+                {
+                    "sub_category": (
+                        f"'{sub_category}'은(는) '{category}' 카테고리의 "
+                        f"올바른 소분류가 아닙니다. "
+                        f"허용된 소분류: {allowed_subs}"
+                    )
+                }
+            )
+
+
+class ExpenseSerializer(CategoryValidationMixin, serializers.ModelSerializer):
     class Meta:
         model = Expense
         fields = [
@@ -25,29 +48,13 @@ class ExpenseSerializer(serializers.ModelSerializer):
         read_only_fields = ["auto_classified"]
 
     def validate(self, attrs):
-        # PATCH 시 부분 업데이트 고려 — 기존 값 fallback
-        instance = self.instance
-        category = attrs.get("category", instance.category if instance else None)
-        sub_category = attrs.get(
-            "sub_category", instance.sub_category if instance else None
+        self._check_category_subcategory(
+            self._resolve(attrs, "category"), self._resolve(attrs, "sub_category")
         )
-
-        if category and sub_category:
-            allowed_subs = CATEGORY_SUBCATEGORY_MAP.get(category, [])
-            if sub_category not in allowed_subs:
-                raise serializers.ValidationError(
-                    {
-                        "sub_category": (
-                            f"'{sub_category}'은(는) '{category}' 카테고리의 "
-                            f"올바른 소분류가 아닙니다. "
-                            f"허용된 소분류: {allowed_subs}"
-                        )
-                    }
-                )
-
         return attrs
 
-class BudgetSerializer(serializers.ModelSerializer):
+
+class BudgetSerializer(CategoryValidationMixin, serializers.ModelSerializer):
     class Meta:
         model = Budget
         fields = [
@@ -63,15 +70,11 @@ class BudgetSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs):
-        # PATCH 시 부분 업데이트 고려 — 기존 값 fallback
-        instance = self.instance
-        category = attrs.get("category", instance.category if instance else None)
-        sub_category = attrs.get(
-            "sub_category", instance.sub_category if instance else None
-        )
-        year = attrs.get("year", instance.year if instance else None)
-        month = attrs.get("month", instance.month if instance else None)
-        amount = attrs.get("amount", instance.amount if instance else None)
+        category = self._resolve(attrs, "category")
+        sub_category = self._resolve(attrs, "sub_category")
+        year = self._resolve(attrs, "year")
+        month = self._resolve(attrs, "month")
+        amount = self._resolve(attrs, "amount")
 
         # 연도 범위 검증 (BR-02)
         if year is not None:
@@ -82,28 +85,16 @@ class BudgetSerializer(serializers.ModelSerializer):
             BudgetService.validate_amount_positive(amount)
 
         # 카테고리-소분류 매핑 검증 (BR-01)
-        if category and sub_category:
-            allowed_subs = CATEGORY_SUBCATEGORY_MAP.get(category, [])
-            if sub_category not in allowed_subs:
-                raise serializers.ValidationError(
-                    {
-                        "sub_category": (
-                            f"'{sub_category}'은(는) '{category}' 카테고리의 "
-                            f"올바른 소분류가 아닙니다. "
-                            f"허용된 소분류: {allowed_subs}"
-                        )
-                    }
-                )
+        self._check_category_subcategory(category, sub_category)
 
         # 중복 예산 사전 검증 (BR-05)
         if year is not None and month is not None and category and sub_category:
-            exclude_id = instance.id if instance else None
             BudgetService.check_duplicate_budget(
                 year=year,
                 month=month,
                 category=category,
                 sub_category=sub_category,
-                exclude_id=exclude_id,
+                exclude_id=getattr(self.instance, "id", None),
             )
 
         return attrs

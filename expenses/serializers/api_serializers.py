@@ -47,8 +47,9 @@ class ExpenseSummarySerializer(serializers.Serializer):
         budget_qs = Budget.objects.all()
         expense_qs = Expense.objects.all()
         if categories:
-            budget_qs = budget_qs.filter(category__in=categories.split(","))
-            expense_qs = expense_qs.filter(category__in=categories.split(","))
+            category_list = categories.split(",")
+            budget_qs = budget_qs.filter(category__in=category_list)
+            expense_qs = expense_qs.filter(category__in=category_list)
 
         if spent_at_after and spent_at_before:
             # 기간이 여러 달에 걸칠 수 있으므로 달마다 겹치는 일수만큼 예산을 일할한다

@@ -42,6 +42,14 @@ def build_deterministic_rules(min_count: int = 2) -> dict[str, tuple[str, str]]:
     Returns:
         { 정규화된_가맹점명: (category, sub_category) } 형태의 규칙 맵.
     """
+    return _rules_from_distribution(_manual_label_distribution(), min_count)
+
+
+def _manual_label_distribution() -> dict[str, Counter]:
+    """수동 확정분을 정규화 키로 그룹화한 (category, sub_category) 분포.
+
+    키 집합 자체가 "수동 이력에 등장한 키"이므로 ambiguous/new 구분에도 그대로 쓴다.
+    """
     training_qs = (
         Expense.objects.exclude(category=ExpenseCategoryEnum.UNSETTLED)
         .filter(auto_classified=False)
@@ -55,7 +63,12 @@ def build_deterministic_rules(min_count: int = 2) -> dict[str, tuple[str, str]]:
         if len(key) < MIN_KEY_LENGTH:
             continue
         distribution[key][(category, sub_category)] += 1
+    return distribution
 
+
+def _rules_from_distribution(
+    distribution: dict[str, Counter], min_count: int
+) -> dict[str, tuple[str, str]]:
     rules: dict[str, tuple[str, str]] = {}
     for key, counter in distribution.items():
         # 분포가 단일 라벨이어야 한다 (모호하면 제외).
@@ -99,10 +112,12 @@ def classify_unsettled(min_count: int = 2, apply: bool = False) -> dict:
             "applied": int,                # apply=True일 때 실제 변경 건수, 아니면 0
         }
     """
-    rules = build_deterministic_rules(min_count=min_count)
+    # 학습 데이터는 한 번만 스캔해 규칙과 이력 키 집합을 함께 얻는다.
+    distribution = _manual_label_distribution()
+    rules = _rules_from_distribution(distribution, min_count)
 
     # 이력에 등장한 적이 있는 키 집합 (ambiguous vs new 구분용).
-    seen_keys = _seen_manual_keys()
+    seen_keys = distribution.keys()
 
     unsettled_qs = Expense.objects.filter(category=ExpenseCategoryEnum.UNSETTLED)
     total_unsettled = unsettled_qs.count()
@@ -158,25 +173,6 @@ def classify_unsettled(min_count: int = 2, apply: bool = False) -> dict:
         "new": new,
         "applied": applied,
     }
-
-
-def _seen_manual_keys() -> set[str]:
-    """수동 확정분 이력에 등장한 정규화 가맹점 키 집합을 반환한다.
-
-    ambiguous(이력 있음) vs new(신규) 구분 기준으로만 사용하므로 min_count/단일성
-    조건은 적용하지 않는다 (등장 자체 유무만 판단).
-    """
-    training_qs = (
-        Expense.objects.exclude(category=ExpenseCategoryEnum.UNSETTLED)
-        .filter(auto_classified=False)
-        .values_list("item", flat=True)
-    )
-    keys: set[str] = set()
-    for item in training_qs.iterator():
-        key = normalize_merchant(item)
-        if len(key) >= MIN_KEY_LENGTH:
-            keys.add(key)
-    return keys
 
 
 def revert_auto_classified() -> int:
