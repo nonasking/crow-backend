@@ -20,5 +20,5 @@ class SMSReceiverView(APIView):
     def post(self, request: Request) -> Response:
         serializer = SMSReceiverPostSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save_to_notion()
+        serializer.save_payment()
         return Response({"status": "success"}, status=status.HTTP_200_OK)

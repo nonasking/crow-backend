@@ -19,23 +19,6 @@ NOTION_EXPENSE_DB_QUERY_URL = settings.NOTION_EXPENSE_DB_QUERY_URL
 NOTION_BUDGET_DB_QUERY_URL = settings.NOTION_BUDGET_DB_QUERY_URL
 
 
-def _format_spent_at(spent_at: Optional[str]) -> str:
-    """
-    MM/DD 형식을 YYYY-MM-DD 로 변환합니다.
-    빈 문자열이거나 파싱 실패 시 오늘 날짜를 반환합니다.
-    """
-    if not spent_at:
-        return date.today().isoformat()
-    parts = spent_at.split("/")
-    if len(parts) != 2:
-        return date.today().isoformat()
-    try:
-        month, day = int(parts[0]), int(parts[1])
-        return date(date.today().year, month, day).isoformat()
-    except ValueError:
-        return date.today().isoformat()
-
-
 class NotionClient:
     """Notion API와 통신하는 클라이언트."""
 
@@ -61,6 +44,9 @@ class NotionClient:
         """
         카드 결제 정보를 Notion 데이터베이스에 새 페이지로 생성합니다.
 
+        Args:
+            parse_result: amount, item, payment_method(label), spent_at(date)
+
         Raises:
             RuntimeError: Notion API 요청 실패 시
         """
@@ -70,14 +56,13 @@ class NotionClient:
             parse_result.get("payment_method"),
             parse_result.get("spent_at"),
         )
-        formatted_date = _format_spent_at(spent_at)
         payload = {
             "parent": {"database_id": NOTION_EXPENSE_DATABASE_ID},
             "properties": {
                 "항목": {"title": [{"text": {"content": item}}]},
                 "소분류": {"select": {"name": DEFAULT_EXPENSE_SUBCATEGORY.label}},
                 "결제방식": {"select": {"name": payment_method}},
-                "날짜": {"date": {"start": formatted_date}},
+                "날짜": {"date": {"start": spent_at.isoformat()}},
                 "수입": {"number": 0},
                 "지출": {"number": amount},
                 "대분류": {"select": {"name": DEFAULT_EXPENSE_CATEGORY.label}},
