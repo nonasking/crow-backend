@@ -69,20 +69,25 @@ class BudgetSerializer(CategoryValidationMixin, serializers.ModelSerializer):
             "updated_at",
         ]
 
+    def validate_year(self, value):
+        # 연도 범위 검증 (BR-02)
+        if not 2000 <= value <= 2100:
+            raise serializers.ValidationError(
+                "연도는 2000년부터 2100년 사이여야 합니다."
+            )
+        return value
+
+    def validate_amount(self, value):
+        # 금액 양수 검증 (BR-04)
+        if value <= 0:
+            raise serializers.ValidationError("예산 금액은 0보다 커야 합니다.")
+        return value
+
     def validate(self, attrs):
         category = self._resolve(attrs, "category")
         sub_category = self._resolve(attrs, "sub_category")
         year = self._resolve(attrs, "year")
         month = self._resolve(attrs, "month")
-        amount = self._resolve(attrs, "amount")
-
-        # 연도 범위 검증 (BR-02)
-        if year is not None:
-            BudgetService.validate_year_range(year)
-
-        # 금액 양수 검증 (BR-04)
-        if amount is not None:
-            BudgetService.validate_amount_positive(amount)
 
         # 카테고리-소분류 매핑 검증 (BR-01)
         self._check_category_subcategory(category, sub_category)
