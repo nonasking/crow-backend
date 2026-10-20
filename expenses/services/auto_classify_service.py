@@ -15,7 +15,7 @@ normalize_merchant 는 receivers.services 의 단일 진실 공급원을 재사�
 
 from collections import Counter, defaultdict
 
-from expenses.constants import ExpenseCategoryEnum
+from expenses.constants import ExpenseCategoryEnum, ExpenseSubCategoryEnum
 from expenses.models import Expense
 from receivers.services import normalize_merchant
 
@@ -185,6 +185,6 @@ def revert_auto_classified() -> int:
     """
     return Expense.objects.filter(auto_classified=True).update(
         category=ExpenseCategoryEnum.UNSETTLED,
-        sub_category=ExpenseCategoryEnum.UNSETTLED,
+        sub_category=ExpenseSubCategoryEnum.UNSETTLED,
         auto_classified=False,
     )
