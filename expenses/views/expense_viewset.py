@@ -1,7 +1,5 @@
-from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework.decorators import action
-from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
@@ -13,21 +11,29 @@ from expenses.constants import (
 )
 from expenses.filters import ExpenseFilter
 from expenses.models.expense import Expense
-from expenses.pagination import ExpensePagination
+from expenses.pagination import DefaultPagination
 from expenses.serializers.api_serializers import (
     ExpenseSummarySerializer,
     NotionExpenseMigrateSerializer,
 )
 from expenses.serializers.model_serializers import ExpenseSerializer
+from expenses.views.notion_migration import run_notion_migration
 
 
+@extend_schema_view(
+    create=extend_schema(summary="Expense 생성"),
+    list=extend_schema(summary="Expense 목록 조회"),
+    retrieve=extend_schema(summary="Expense 단건 조회"),
+    update=extend_schema(summary="Expense 수정"),
+    partial_update=extend_schema(summary="Expense 단건 수정"),
+    destroy=extend_schema(summary="Expense 삭제"),
+)
 class ExpenseViewSet(ModelViewSet):
     queryset = Expense.objects.all()
     serializer_class = ExpenseSerializer
 
-    pagination_class = ExpensePagination
+    pagination_class = DefaultPagination
 
-    filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = ExpenseFilter
 
     ordering_fields = [
@@ -39,43 +45,13 @@ class ExpenseViewSet(ModelViewSet):
     ]
     ordering = ["-spent_at"]
 
-    @extend_schema(summary="Expense 생성")
-    def create(self, request, *args, **kwargs):
-        return super().create(request, *args, **kwargs)
-
-    @extend_schema(summary="Expense 목록 조회")
-    def list(self, request, *args, **kwargs):
-        return super().list(request, *args, **kwargs)
-
-    @extend_schema(summary="Expense 단건 조회")
-    def retrieve(self, request, *args, **kwargs):
-        return super().retrieve(request, *args, **kwargs)
-
-    @extend_schema(summary="Expense 수정")
-    def update(self, request, *args, **kwargs):
-        return super().update(request, *args, **kwargs)
-
-    @extend_schema(summary="Expense 단건 수정")
-    def partial_update(self, request, *args, **kwargs):
-        return super().partial_update(request, *args, **kwargs)
-
-    @extend_schema(summary="Expense 삭제")
-    def destroy(self, request, *args, **kwargs):
-        return super().destroy(request, *args, **kwargs)
-
     @extend_schema(
         summary="Notion data > Expense 모델로 마이그레이션",
         request=NotionExpenseMigrateSerializer,
     )
     @action(detail=False, methods=["post"], url_path="migrate-expenses-from-notion")
     def migrate_expenses_from_notion(self, request, *args, **kwargs):
-        serializer = NotionExpenseMigrateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        try:
-            result = serializer.save()
-        except RuntimeError as e:
-            return Response({"detail": str(e)}, status=502)
-        return Response(result)
+        return run_notion_migration(NotionExpenseMigrateSerializer, request.data)
 
     @extend_schema(
         summary="카테고리 / 서브카테고리 / 결제수단 값 조회",
