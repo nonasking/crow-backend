@@ -1,69 +1,50 @@
 from django.db import IntegrityError
-from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
-from rest_framework.filters import OrderingFilter
-from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from expenses.filters import BudgetFilter
 from expenses.models import Budget
-from expenses.pagination import BudgetPagination
+from expenses.pagination import DefaultPagination
 from expenses.serializers.api_serializers import NotionBudgetMigrateSerializer
 from expenses.serializers.model_serializers import BudgetSerializer
+from expenses.views.notion_migration import run_notion_migration
 
 
+@extend_schema_view(
+    create=extend_schema(summary="Budget 생성"),
+    list=extend_schema(summary="Budget 목록 조회"),
+    retrieve=extend_schema(summary="Budget 단건 조회"),
+    update=extend_schema(summary="Budget 수정"),
+    partial_update=extend_schema(summary="Budget 단건 수정"),
+    destroy=extend_schema(summary="Budget 삭제"),
+)
 class BudgetViewSet(ModelViewSet):
     queryset = Budget.objects.all()
     serializer_class = BudgetSerializer
 
-    pagination_class = BudgetPagination
+    pagination_class = DefaultPagination
 
-    filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = BudgetFilter
     ordering_fields = ["year", "month", "category", "amount", "created_at"]
     ordering = ["-year", "-month", "category"]
 
     def perform_create(self, serializer):
-        try:
-            serializer.save()
-        except IntegrityError:
-            raise ValidationError(
-                "해당 연도/월/카테고리/소분류 조합의 예산이 이미 존재합니다."
-            )
+        self._save_or_raise_duplicate(serializer)
 
     def perform_update(self, serializer):
+        self._save_or_raise_duplicate(serializer)
+
+    @staticmethod
+    def _save_or_raise_duplicate(serializer):
+        # validate 단계의 중복 검사와 save 사이 경쟁 상태로 UniqueConstraint에 걸리는 경우
         try:
             serializer.save()
         except IntegrityError:
             raise ValidationError(
                 "해당 연도/월/카테고리/소분류 조합의 예산이 이미 존재합니다."
             )
-
-    @extend_schema(summary="Budget 생성")
-    def create(self, request, *args, **kwargs):
-        return super().create(request, *args, **kwargs)
-
-    @extend_schema(summary="Budget 목록 조회")
-    def list(self, request, *args, **kwargs):
-        return super().list(request, *args, **kwargs)
-
-    @extend_schema(summary="Budget 단건 조회")
-    def retrieve(self, request, *args, **kwargs):
-        return super().retrieve(request, *args, **kwargs)
-
-    @extend_schema(summary="Budget 수정")
-    def update(self, request, *args, **kwargs):
-        return super().update(request, *args, **kwargs)
-
-    @extend_schema(summary="Budget 단건 수정")
-    def partial_update(self, request, *args, **kwargs):
-        return super().partial_update(request, *args, **kwargs)
-
-    @extend_schema(summary="Budget 삭제")
-    def destroy(self, request, *args, **kwargs):
-        return super().destroy(request, *args, **kwargs)
 
     @extend_schema(
         summary="Notion data > Budget 모델로 마이그레이션",
@@ -71,10 +52,4 @@ class BudgetViewSet(ModelViewSet):
     )
     @action(detail=False, methods=["post"], url_path="migrate-budget-from-notion")
     def migrate_budget_from_notion(self, request, *args, **kwargs):
-        serializer = NotionBudgetMigrateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        try:
-            result = serializer.save()
-        except RuntimeError as e:
-            return Response({"detail": str(e)}, status=502)
-        return Response(result)
+        return run_notion_migration(NotionBudgetMigrateSerializer, request.data)

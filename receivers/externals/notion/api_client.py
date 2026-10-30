@@ -4,30 +4,19 @@ from typing import Optional
 import requests
 from django.conf import settings
 
-from expenses.constants import DEFAULT_EXPENSE_CATEGORY, DEFAULT_EXPENSE_SUBCATEGORY
-from expenses.models import Budget
+from expenses.constants import (
+    DEFAULT_EXPENSE_CATEGORY,
+    DEFAULT_EXPENSE_SUBCATEGORY,
+    ExpenseCategoryEnum,
+    ExpensePaymentMethodEnum,
+    ExpenseSubCategoryEnum,
+)
+from expenses.models import Budget, Expense
 
 NOTION_API_URL = settings.NOTION_API_URL
 NOTION_EXPENSE_DATABASE_ID = settings.NOTION_EXPENSE_DATABASE_ID
 NOTION_EXPENSE_DB_QUERY_URL = settings.NOTION_EXPENSE_DB_QUERY_URL
 NOTION_BUDGET_DB_QUERY_URL = settings.NOTION_BUDGET_DB_QUERY_URL
-
-
-def _format_spent_at(spent_at: Optional[str]) -> str:
-    """
-    MM/DD 형식을 YYYY-MM-DD 로 변환합니다.
-    빈 문자열이거나 파싱 실패 시 오늘 날짜를 반환합니다.
-    """
-    if not spent_at:
-        return date.today().isoformat()
-    parts = spent_at.split("/")
-    if len(parts) != 2:
-        return date.today().isoformat()
-    try:
-        month, day = int(parts[0]), int(parts[1])
-        return date(date.today().year, month, day).isoformat()
-    except ValueError:
-        return date.today().isoformat()
 
 
 class NotionClient:
@@ -55,6 +44,9 @@ class NotionClient:
         """
         카드 결제 정보를 Notion 데이터베이스에 새 페이지로 생성합니다.
 
+        Args:
+            parse_result: amount, item, payment_method(label), spent_at(date)
+
         Raises:
             RuntimeError: Notion API 요청 실패 시
         """
@@ -64,14 +56,13 @@ class NotionClient:
             parse_result.get("payment_method"),
             parse_result.get("spent_at"),
         )
-        formatted_date = _format_spent_at(spent_at)
         payload = {
             "parent": {"database_id": NOTION_EXPENSE_DATABASE_ID},
             "properties": {
                 "항목": {"title": [{"text": {"content": item}}]},
                 "소분류": {"select": {"name": DEFAULT_EXPENSE_SUBCATEGORY.label}},
                 "결제방식": {"select": {"name": payment_method}},
-                "날짜": {"date": {"start": formatted_date}},
+                "날짜": {"date": {"start": spent_at.isoformat()}},
                 "수입": {"number": 0},
                 "지출": {"number": amount},
                 "대분류": {"select": {"name": DEFAULT_EXPENSE_CATEGORY.label}},
@@ -140,12 +131,6 @@ class NotionClient:
         Returns:
             Expense 생성용 dict, 필수 필드 누락 시 None
         """
-        from expenses.constants import (
-            ExpenseCategoryEnum,
-            ExpensePaymentMethodEnum,
-            ExpenseSubCategoryEnum,
-        )
-
         props = page.get("properties", {})
 
         # ── 항목 (title) ──────────────────────────────
@@ -162,7 +147,7 @@ class NotionClient:
         amount = props.get("지출", {}).get("number") or 0
 
         # ── 대분류 (select) → ExpenseCategoryEnum ─────
-        category_label = (props.get("대분류", {}).get("select") or {}).get("name", "")
+        category_label = _select_name(props, "대분류")
         category = _label_to_enum_value(
             category_label,
             ExpenseCategoryEnum,
@@ -170,7 +155,7 @@ class NotionClient:
         )
 
         # ── 소분류 (select) → ExpenseSubCategoryEnum ──
-        sub_label = (props.get("소분류", {}).get("select") or {}).get("name", "")
+        sub_label = _select_name(props, "소분류")
         sub_category = _label_to_enum_value(
             sub_label,
             ExpenseSubCategoryEnum,
@@ -178,7 +163,7 @@ class NotionClient:
         )
 
         # ── 결제방식 (select) → ExpensePaymentMethodEnum
-        payment_label = (props.get("결제방식", {}).get("select") or {}).get("name", "")
+        payment_label = _select_name(props, "결제방식")
         payment_method = _label_to_enum_value(
             payment_label,
             ExpensePaymentMethodEnum,
@@ -215,8 +200,6 @@ class NotionClient:
         Returns:
             Budget 생성용 dict, 필수 필드(연도/월) 누락 시 None
         """
-        from expenses.constants import ExpenseCategoryEnum, ExpenseSubCategoryEnum
-
         props = page.get("properties", {})
 
         # ── 연도 (number) ─────────────────────────────
@@ -230,7 +213,7 @@ class NotionClient:
             return None
 
         # ── 대분류 (select) → ExpenseCategoryEnum ─────
-        category_label = (props.get("대분류", {}).get("select") or {}).get("name", "")
+        category_label = _select_name(props, "대분류")
         category = _label_to_enum_value(
             category_label,
             ExpenseCategoryEnum,
@@ -238,7 +221,7 @@ class NotionClient:
         )
 
         # ── 소분류 (select) → ExpenseSubCategoryEnum ──
-        sub_label = (props.get("소분류", {}).get("select") or {}).get("name", "")
+        sub_label = _select_name(props, "소분류")
         sub_category = _label_to_enum_value(
             sub_label,
             ExpenseSubCategoryEnum,
@@ -270,8 +253,6 @@ class NotionClient:
         Notion 예산 데이터베이스의 모든 레코드를 Django DB(Budget 모델)로 마이그레이션합니다.
 
         Args:
-            budget_database_id: 예산 전용 Notion DB ID.
-                                None이면 기본 self.database_id 사용.
             skip_duplicates:    True면 (year, month, category, sub_category) 조합이
                                 이미 DB에 존재하는 경우 건너뜁니다. (기본값 True)
             batch_size:         bulk_create 단위 크기.
@@ -284,48 +265,14 @@ class NotionClient:
                 "errors": list[str]
             }
         """
-        pages = self._fetch_all_pages(url=NOTION_BUDGET_DB_QUERY_URL)
-
-        total = len(pages)
-        to_create: list[Budget] = []
-        skipped = 0
-        errors: list[str] = []
-
-        for page in pages:
-            page_id = page.get("id", "unknown")
-            data = self._parse_page_to_budget_data(page)
-
-            if data is None:
-                errors.append(page_id)
-                skipped += 1
-                continue
-
-            if (
-                skip_duplicates
-                and Budget.objects.filter(
-                    year=data["year"],
-                    month=data["month"],
-                    category=data["category"],
-                    sub_category=data["sub_category"],
-                ).exists()
-            ):
-                skipped += 1
-                continue
-
-            to_create.append(Budget(**data))
-
-        created_count = 0
-        for i in range(0, len(to_create), batch_size):
-            batch = to_create[i : i + batch_size]
-            Budget.objects.bulk_create(batch)
-            created_count += len(batch)
-
-        return {
-            "total": total,
-            "created": created_count,
-            "skipped": skipped,
-            "errors": errors,
-        }
+        return self._migrate_pages_to_db(
+            url=NOTION_BUDGET_DB_QUERY_URL,
+            model=Budget,
+            parse_page=self._parse_page_to_budget_data,
+            duplicate_fields=("year", "month", "category", "sub_category"),
+            skip_duplicates=skip_duplicates,
+            batch_size=batch_size,
+        )
 
     def migrate_expense_to_db(
         self,
@@ -351,47 +298,60 @@ class NotionClient:
         Raises:
             RuntimeError: Notion API 요청 실패 시
         """
-        from expenses.models import Expense
+        return self._migrate_pages_to_db(
+            url=NOTION_EXPENSE_DB_QUERY_URL,
+            model=Expense,
+            parse_page=self._parse_page_to_expense_data,
+            duplicate_fields=("spent_at", "item", "amount"),
+            skip_duplicates=skip_duplicates,
+            batch_size=batch_size,
+        )
 
-        pages = self._fetch_all_pages(url=NOTION_EXPENSE_DB_QUERY_URL)
-        total = len(pages)
+    def _migrate_pages_to_db(
+        self,
+        url: str,
+        model,
+        parse_page,
+        duplicate_fields: tuple[str, ...],
+        skip_duplicates: bool,
+        batch_size: int,
+    ) -> dict:
+        pages = self._fetch_all_pages(url=url)
 
-        to_create: list[Expense] = []
+        # 페이지마다 exists() 쿼리를 날리지 않도록 기존 키를 한 번에 읽어 둔다.
+        existing_keys = (
+            {
+                tuple(_as_lookup_value(v) for v in row)
+                for row in model.objects.values_list(*duplicate_fields)
+            }
+            if skip_duplicates
+            else set()
+        )
+
+        to_create = []
         skipped = 0
         errors: list[str] = []
 
         for page in pages:
-            page_id = page.get("id", "unknown")
-            data = self._parse_page_to_expense_data(page)
+            data = parse_page(page)
 
             if data is None:
-                errors.append(page_id)
+                errors.append(page.get("id", "unknown"))
                 skipped += 1
                 continue
 
-            if (
-                skip_duplicates
-                and Expense.objects.filter(
-                    spent_at=data["spent_at"],
-                    item=data["item"],
-                    amount=data["amount"],
-                ).exists()
-            ):
+            key = tuple(_as_lookup_value(data[f]) for f in duplicate_fields)
+            if key in existing_keys:
                 skipped += 1
                 continue
 
-            to_create.append(Expense(**data))
+            to_create.append(model(**data))
 
-        # bulk_create로 DB 일괄 저장
-        created_count = 0
-        for i in range(0, len(to_create), batch_size):
-            batch = to_create[i : i + batch_size]
-            Expense.objects.bulk_create(batch)
-            created_count += len(batch)
+        model.objects.bulk_create(to_create, batch_size=batch_size)
 
         return {
-            "total": total,
-            "created": created_count,
+            "total": len(pages),
+            "created": len(to_create),
             "skipped": skipped,
             "errors": errors,
         }
@@ -400,6 +360,24 @@ class NotionClient:
 # ──────────────────────────────────────────────────────────────────────────────
 # 헬퍼 함수
 # ──────────────────────────────────────────────────────────────────────────────
+
+
+def _as_lookup_value(value):
+    """DB 값과 Notion 파싱 값을 같은 형태로 비교하기 위한 정규화.
+
+    - date → ISO 문자열 (Notion 날짜는 문자열로 들어온다)
+    - float → int (Notion number는 float일 수 있고, IntegerField 조회 시 int로 변환된다)
+    """
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, float):
+        return int(value)
+    return value
+
+
+def _select_name(props: dict, key: str) -> str:
+    """Notion select 속성의 name 값. 값이 비어 있으면 빈 문자열."""
+    return (props.get(key, {}).get("select") or {}).get("name", "")
 
 
 def _label_to_enum_value(label: str, enum_class, default):

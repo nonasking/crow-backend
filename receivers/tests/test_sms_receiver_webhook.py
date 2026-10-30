@@ -55,3 +55,17 @@ def test_webhook_api_responds_shinhan(client):
         assert created_expense.category == ExpenseCategoryEnum.UNSETTLED
 
         assert response.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.django_db
+def test_webhook_unsupported_company_returns_readable_message(client):
+    response = client.post(
+        "/receivers/webhook/",
+        data={"message": "[Web발신]\n국민카드 1,000원 승인"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert response.data["message"] == [
+        "메시지 파싱 실패: 지원하지 않는 카드사입니다"
+    ]

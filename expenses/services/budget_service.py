@@ -7,30 +7,6 @@ class BudgetService:
     """Budget 도메인 비즈니스 로직을 담당하는 서비스 클래스."""
 
     @staticmethod
-    def validate_year_range(year: int) -> None:
-        """
-        연도 범위 검증.
-        - 허용 범위: 2000 <= year <= 2100
-        - 위반 시: ValidationError (year 필드)
-        """
-        if year < 2000 or year > 2100:
-            raise serializers.ValidationError(
-                {"year": "연도는 2000년부터 2100년 사이여야 합니다."}
-            )
-
-    @staticmethod
-    def validate_amount_positive(amount: int) -> None:
-        """
-        금액 양수 검증.
-        - 조건: amount > 0
-        - 위반 시: ValidationError (amount 필드)
-        """
-        if amount <= 0:
-            raise serializers.ValidationError(
-                {"amount": "예산 금액은 0보다 커야 합니다."}
-            )
-
-    @staticmethod
     def check_duplicate_budget(
         year: int,
         month: int,

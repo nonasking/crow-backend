@@ -1,4 +1,9 @@
+from zoneinfo import ZoneInfo
+
 from django.db import models
+
+# 결제일·"오늘" 판단 기준 시간대. 서버(TIME_ZONE=UTC)가 아니라 사용자 기준인 한국 시간을 쓴다.
+LOCAL_TIMEZONE = ZoneInfo("Asia/Seoul")
 
 
 class ExpenseCategoryEnum(models.TextChoices):
@@ -155,10 +160,3 @@ class ExpensePaymentMethodEnum(models.TextChoices):
     WOORI = "WOORI", "우리은행통장"
     CASH = "CASH", "현금"
     ETC = "ETC", "기타"
-
-    @classmethod
-    def from_label(cls, label):
-        for choice in cls:
-            if choice.label == label:
-                return choice.value
-        raise ValueError(f"Invalid label: {label}")
