@@ -15,6 +15,7 @@ from expenses.constants import ExpenseCategoryEnum as Cat
 from expenses.constants import ExpenseSubCategoryEnum as Sub
 from expenses.models import Expense
 from expenses.services.auto_classify_service import (
+    MIN_KEY_LENGTH,
     build_deterministic_rules,
     classify_unsettled,
     revert_auto_classified,
@@ -79,6 +80,16 @@ class TestBuildDeterministicRules:
         _manual("A", Cat.FOOD, Sub.BEVERAGE, n=5)
         rules = build_deterministic_rules(min_count=2)
         assert "A" not in rules
+
+    def test_exact_min_key_length_adopted(self):
+        # P1 경계: len(key) == MIN_KEY_LENGTH 는 채택된다 (< 이지 <= 가 아님).
+        # 다른 채택 케이스는 모두 3글자 이상이라, 이 테스트가 없으면
+        # MIN_KEY_LENGTH 를 3으로 올려도 아무 테스트도 깨지지 않는다.
+        key = "김밥"
+        assert len(key) == MIN_KEY_LENGTH
+        _manual(key, Cat.FOOD, Sub.DINING_OUT, n=2)
+        rules = build_deterministic_rules(min_count=2)
+        assert rules.get(key) == (Cat.FOOD, Sub.DINING_OUT)
 
     def test_unsettled_rows_not_learned(self):
         # P1: UNSETTLED 행은 학습 대상 아님
