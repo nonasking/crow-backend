@@ -2,7 +2,9 @@ import calendar
 from datetime import date, timedelta
 
 from django.db.models import Count, Sum
+from django.utils import timezone
 
+from expenses.constants import LOCAL_TIMEZONE
 from expenses.models import Budget, Expense
 
 
@@ -19,7 +21,7 @@ def summarize_expenses(
     spent_at_after/spent_at_before가 둘 다 있으면 그 기간 기준으로,
     아니면 year/month 한 달 기준으로 집계한다.
     """
-    today = today or date.today()
+    today = today or timezone.localdate(timezone=LOCAL_TIMEZONE)
 
     budget_qs = Budget.objects.all()
     expense_qs = Expense.objects.all()

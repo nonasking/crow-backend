@@ -1,7 +1,7 @@
-from datetime import date
-
+from django.utils import timezone
 from rest_framework import serializers
 
+from expenses.constants import LOCAL_TIMEZONE
 from expenses.services.expense_summary_service import summarize_expenses
 from receivers.externals.notion.api_client import NotionClient
 
@@ -30,7 +30,7 @@ class ExpenseSummarySerializer(serializers.Serializer):
     spent_at_before = serializers.DateField(required=False)
 
     def validate(self, attrs):
-        today = date.today()
+        today = timezone.localdate(timezone=LOCAL_TIMEZONE)
         attrs["year"] = attrs.get("year", today.year)
         attrs["month"] = attrs.get("month", today.month)
         return attrs
