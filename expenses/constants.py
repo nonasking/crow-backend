@@ -1,4 +1,9 @@
+from zoneinfo import ZoneInfo
+
 from django.db import models
+
+# 결제일·"오늘" 판단 기준 시간대. 서버(TIME_ZONE=UTC)가 아니라 사용자 기준인 한국 시간을 쓴다.
+LOCAL_TIMEZONE = ZoneInfo("Asia/Seoul")
 
 
 class ExpenseCategoryEnum(models.TextChoices):

@@ -4,7 +4,10 @@
 
 from datetime import date
 
+from django.utils import timezone
+
 from expenses.constants import (
+    LOCAL_TIMEZONE,
     ExpenseCategoryEnum,
     ExpensePaymentMethodEnum,
     ExpenseSubCategoryEnum,
@@ -18,6 +21,8 @@ def resolve_spent_at(spent_at: str, today: date | None = None) -> date:
 
     SMS에는 연도가 없으므로 올해로 붙이되, 미래 날짜가 되면 작년 결제로 봅니다.
     날짜를 추출하지 못한 경우(빈 문자열 등)에는 오늘 날짜를 반환합니다.
+    '오늘'은 SMS와 같은 한국 시간 기준입니다. 서버 시간(UTC)으로 판단하면
+    KST 00:00~08:59 결제가 미래 날짜로 보여 작년으로 기록됩니다.
 
     Examples:
         >>> resolve_spent_at("02/23", today=date(2026, 3, 1))
@@ -25,7 +30,7 @@ def resolve_spent_at(spent_at: str, today: date | None = None) -> date:
         >>> resolve_spent_at("12/31", today=date(2027, 1, 2))
         datetime.date(2026, 12, 31)
     """
-    today = today or date.today()
+    today = today or timezone.localdate(timezone=LOCAL_TIMEZONE)
     try:
         month, day = (int(part) for part in spent_at.split("/"))
     except ValueError:
