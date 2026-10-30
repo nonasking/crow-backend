@@ -504,6 +504,6 @@ pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/django,python,linux,macos,pycharm,jetbrains
 
-_workspace/
+_workspace*/
 .claude/cache/
 .claude/tmp/
