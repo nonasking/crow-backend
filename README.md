@@ -114,7 +114,11 @@ Create `.env.local` in the project root:
 SECRET_KEY=your-secret-key
 DEBUG=True
 
-DATABASE_URL=postgres://user:password@localhost:5432/crow
+DATABASE_NAME=crow
+DATABASE_USER=postgres
+DATABASE_PASSWORD=postgres
+DATABASE_HOST=127.0.0.1
+DATABASE_PORT=5432
 
 NOTION_TOKEN=your-notion-integration-token
 NOTION_EXPENSE_DATABASE_ID=your-expense-db-id
@@ -123,7 +127,7 @@ NOTION_VERSION=2022-06-28
 ```
 
 > The app reads `.env.{DJANGO_ENV}` where `DJANGO_ENV` defaults to `local`.
-> For production, set `DJANGO_ENV=production` and create `.env.production`.
+> For production, set `DJANGO_ENV=prod` and create `.env.prod` (any value other than `local`/`test` also turns on `sslmode=require` for PostgreSQL).
 
 ### 3. Apply migrations
 
@@ -153,7 +157,7 @@ Interactive docs are available at `/api/docs/` (Swagger UI) and `/api/redoc/` (R
 
 All endpoints require `Authorization: Bearer <access_token>` unless noted otherwise.
 
-Tokens are issued on login: access token lifetime is **24 hours**, refresh token is **7 days**.
+Tokens are issued on login: access token lifetime is **24 hours**, refresh token is **7 days**. There is no refresh endpoint yet, so in practice you log in again after 24 hours.
 
 ---
 
@@ -162,7 +166,7 @@ Tokens are issued on login: access token lifetime is **24 hours**, refresh token
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
 | `POST` | `/auth/login/` | None | Obtain JWT token pair |
-| `POST` | `/auth/logout/` | Required | Invalidate refresh token |
+| `POST` | `/auth/logout/` | Required | Acknowledge logout (the client discards its tokens; nothing is revoked server-side) |
 | `GET` | `/auth/me/` | Required | Get current user info |
 
 **Login request:**
@@ -296,8 +300,8 @@ Unmatched `UNSETTLED` rows are reported in two buckets: **ambiguous** (the merch
 
 ## Testing
 
-**134 tests across 14 modules**, run on a dedicated PostgreSQL test database.
-(109 test functions; parametrized suites expand to 134 cases.)
+**144 tests across 14 modules**, run on a dedicated PostgreSQL test database.
+(116 test functions; parametrized suites expand to 144 cases.)
 
 | Module | Tests | What it covers |
 |---|---|---|
@@ -310,10 +314,10 @@ Unmatched `UNSETTLED` rows are reported in two buckets: **ambiguous** (the merch
 | `expenses/tests/test_preview_item_cleanup_command.py` | 6 | `preview_item_cleanup` command — reports impact, mutates nothing |
 | `expenses/tests/test_auto_classify_unsettled_command.py` | 5 | `auto_classify_unsettled` command — dry-run default, `--apply`, `--revert` |
 | `expenses/tests/test_normalize_sms_items_migration.py` | 5 | Data migration 0005 — forwards, backwards restore from backup, idempotency |
-| `expenses/tests/test_expense_viewset.py` | 6 | Expense CRUD, read-only `auto_classified`, Notion import, multi-month summary |
-| `receivers/tests/test_notion_migration.py` | 4 | Notion → DB import: duplicate skipping, batched `bulk_create` |
+| `expenses/tests/test_expense_viewset.py` | 8 | Expense CRUD, read-only `auto_classified` (cleared when the category is edited by hand), Notion import, multi-month summary |
+| `receivers/tests/test_notion_migration.py` | 7 | Notion → DB import: duplicate skipping (including duplicates inside Notion), batched `bulk_create`, budget re-run via the API, `409` on a constraint conflict |
 | `receivers/tests/test_sms_receiver_webhook.py` | 3 | SMS webhook → `Expense` flow with mocked Notion, unsupported card error |
-| `expenses/tests/test_expense_summary.py` | 2 | Summary defaults (year/month, daily budget) follow the KST date |
+| `expenses/tests/test_expense_summary.py` | 7 | Summary defaults (year/month, daily budget) follow the KST date; daily budget for past/current/future months; `month` outside 1–12 rejected |
 | `config/test_health.py` | 1 | `/health/` endpoint |
 
 The safety-critical paths get the most attention: anything that **writes** (the data migration, `--apply`, `--revert`) is tested for what it must *not* touch, not just what it changes.

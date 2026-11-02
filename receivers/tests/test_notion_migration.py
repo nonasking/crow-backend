@@ -131,3 +131,42 @@ class TestMigrateBudgetToDb:
             "errors": ["bad-month"],
         }
         assert Budget.objects.count() == 2
+
+
+@pytest.mark.django_db
+class TestMigrateBudgetEdgeCases:
+    def test_duplicate_keys_inside_notion_created_once(self):
+        pages = [
+            _budget_page("a", 2026, 5, 500000),
+            _budget_page("b", 2026, 5, 600000),
+        ]
+
+        result = _migrate_budget(pages)
+
+        assert result["created"] == 1
+        assert result["skipped"] == 1
+        assert Budget.objects.count() == 1
+
+    def test_rerun_via_api_default_skips_existing(self, auth_client):
+        pages = [_budget_page("a", 2026, 5, 500000)]
+        with patch.object(NotionClient, "_fetch_all_pages", return_value=pages):
+            first = auth_client.post("/expenses/budget/migrate-budget-from-notion/", data={}, content_type="application/json")
+            second = auth_client.post("/expenses/budget/migrate-budget-from-notion/", data={}, content_type="application/json")
+
+        assert first.status_code == 200, first.data
+        assert second.status_code == 200, second.data
+        assert second.data["created"] == 0
+        assert Budget.objects.count() == 1
+
+    def test_conflict_without_skip_returns_409(self, auth_client):
+        pages = [_budget_page("a", 2026, 5, 500000)]
+        with patch.object(NotionClient, "_fetch_all_pages", return_value=pages):
+            auth_client.post("/expenses/budget/migrate-budget-from-notion/", data={}, content_type="application/json")
+            response = auth_client.post(
+                "/expenses/budget/migrate-budget-from-notion/",
+                data={"skip_duplicates": False},
+                content_type="application/json",
+            )
+
+        assert response.status_code == 409
+        assert Budget.objects.count() == 1

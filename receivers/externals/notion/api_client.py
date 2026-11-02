@@ -344,6 +344,9 @@ class NotionClient:
             if key in existing_keys:
                 skipped += 1
                 continue
+            if skip_duplicates:
+                # Notion 안에 같은 키가 두 번 있어도 한 번만 만든다.
+                existing_keys.add(key)
 
             to_create.append(model(**data))
 

@@ -15,7 +15,9 @@ class NotionExpenseMigrateSerializer(serializers.Serializer):
 
 
 class NotionBudgetMigrateSerializer(serializers.Serializer):
-    skip_duplicates = serializers.BooleanField(default=False)
+    # Budget은 (year, month, category, sub_category) unique 제약이 있어서
+    # 중복을 건너뛰지 않으면 두 번째 실행부터 제약 위반이 난다.
+    skip_duplicates = serializers.BooleanField(default=True)
 
     def save(self):
         skip_duplicates = self.validated_data["skip_duplicates"]
@@ -24,7 +26,7 @@ class NotionBudgetMigrateSerializer(serializers.Serializer):
 
 class ExpenseSummarySerializer(serializers.Serializer):
     year = serializers.IntegerField(required=False)
-    month = serializers.IntegerField(required=False)
+    month = serializers.IntegerField(required=False, min_value=1, max_value=12)
     category = serializers.CharField(required=False)
     spent_at_after = serializers.DateField(required=False)
     spent_at_before = serializers.DateField(required=False)

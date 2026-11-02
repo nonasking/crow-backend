@@ -35,3 +35,28 @@ def test_daily_budget_prorates_to_kst_today():
 
     # 11월 1일치(30000 / 30일 * 1일)
     assert result["daily_budget"] == 1000
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "year, month, expected",
+    [
+        (2026, 10, 31000),  # 지난 달: 한 달 전체
+        (2026, 11, 1000),  # 이번 달: 오늘(1일)까지
+        (2026, 12, 0),  # 앞으로 올 달: 0일
+    ],
+)
+def test_daily_budget_prorates_by_month_position(year, month, expected):
+    Budget.objects.create(year=year, month=month, amount=31000 if month != 11 else 30000)
+
+    with patch("django.utils.timezone.now", return_value=KST_JUST_AFTER_MIDNIGHT):
+        result = summarize_expenses(year=year, month=month)
+
+    assert result["daily_budget"] == expected
+
+
+@pytest.mark.parametrize("month", [0, 13])
+def test_summary_rejects_out_of_range_month(month):
+    serializer = ExpenseSummarySerializer(data={"year": 2026, "month": month})
+    assert not serializer.is_valid()
+    assert "month" in serializer.errors
