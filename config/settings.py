@@ -161,6 +161,9 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    "DEFAULT_THROTTLE_RATES": {
+        "sms_webhook": env("SMS_WEBHOOK_THROTTLE_RATE", default="30/minute"),
+    },
 }
 
 
@@ -189,6 +192,11 @@ SPECTACULAR_SETTINGS = {
         }
     },
 }
+
+
+# SMS webhook shared secret (receivers.permissions.HasWebhookToken)
+# 비어 있으면 검증을 건너뛰고 경고만 남긴다. 운영에서는 반드시 설정한다.
+SMS_WEBHOOK_TOKEN = env("SMS_WEBHOOK_TOKEN", default="")
 
 
 # Notion settings

@@ -22,6 +22,14 @@ _CORPORATE_FORM_PATTERN = re.compile(r"\(주\)|주식회사|㈜")
 
 _WHITESPACE_PATTERN = re.compile(r"\s+")
 
+# 신한 패턴2 가맹점: 'HH:MM' 뒤부터 '잔액' 앞(또는 줄 끝)까지.
+# 문자 클래스 [^잔액]으로 쓰면 '잔'·'액' 글자 하나하나를 제외하므로
+# "잔치국수"가 빈 문자열, "카페액자"가 "카페"로 잘린다.
+_SHINHAN_PAREN_LOCATION_PATTERN = re.compile(r"\d{2}:\d{2}\s+(?!잔액)(.+?)(?=\s*잔액|\s*$)")
+
+# Expense.item(max_length=100)에 맞춘 길이 상한
+ITEM_MAX_LENGTH = 100
+
 
 def normalize_merchant(item: str) -> str:
     """SMS 포맷의 가맹점 항목 문자열을 깨끗한 가맹점명으로 정규화합니다.
@@ -72,6 +80,14 @@ class ParseSMSService:
 
     def __init__(self, message: str):
         self.message = message
+
+    def is_cancellation(self) -> bool:
+        """승인취소 문자인지 판별합니다.
+
+        취소 문자도 금액과 가맹점 형식이 승인 문자와 같아서, 그대로 파싱하면
+        환불이 지출로 한 번 더 기록됩니다.
+        """
+        return "취소" in self.message
 
     def parse(self, enum_representation: Literal["label", "value"] = "label") -> dict:
         """
@@ -125,7 +141,7 @@ class ParseSMSService:
         if "신한(" in self.message:
             amount, _ = self._extract_amount(r"\s([\d,]+)원")
 
-            location_match = re.search(r"\d{2}:\d{2}\s+([^잔액]+)", self.message)
+            location_match = _SHINHAN_PAREN_LOCATION_PATTERN.search(self.message)
             location = location_match.group(1).strip() if location_match else ""
             location = normalize_merchant(location)
 
@@ -182,6 +198,10 @@ class ParseSMSService:
     def _build_result(
         amount: int, item: str, payment_method: str, spent_at: str
     ) -> dict:
+        item = item.strip()
+        if not item:
+            raise ValueError(ParseSMSErrorMessages.EMPTY_ITEM)
+        item = item[:ITEM_MAX_LENGTH]
         return {
             "amount": amount,
             "item": item,
