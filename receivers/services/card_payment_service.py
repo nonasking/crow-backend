@@ -53,8 +53,11 @@ def record_card_payment(parsed: dict) -> Expense:
 
     Expense 저장과 Notion 기록을 한 트랜잭션으로 묶습니다. DB 저장을 먼저 해서
     DB 오류(예: 제약 위반)가 나면 Notion에는 아무것도 남지 않고, Notion 기록이
-    실패하면 Expense 저장도 롤백됩니다. 그래서 포워더가 재시도해도 한쪽에만
-    중복이 쌓이지 않습니다.
+    실패하면 Expense 저장도 롤백됩니다.
+
+    멱등성은 보장하지 않습니다. Notion이 페이지를 만든 뒤 타임아웃이 나거나
+    Notion 성공 후 COMMIT이 실패하면, 포워더가 재시도할 때 Notion에 페이지가
+    하나 더 생길 수 있습니다.
 
     Args:
         parsed: ParseSMSService(...).parse(enum_representation="value") 결과

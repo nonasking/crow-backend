@@ -27,6 +27,11 @@ _WHITESPACE_PATTERN = re.compile(r"\s+")
 # "잔치국수"가 빈 문자열, "카페액자"가 "카페"로 잘린다.
 _SHINHAN_PAREN_LOCATION_PATTERN = re.compile(r"\d{2}:\d{2}\s+(?!잔액)(.+?)(?=\s*잔액|\s*$)")
 
+# 승인취소 문자 판별: "승인취소" 또는 카드번호 괄호 바로 뒤의 "취소".
+# 문자 전체에서 "취소"를 찾으면 가맹점명("취소불가상점")이나 적요("예약취소수수료")에
+# 걸려 정상 지출이 기록되지 않는다.
+_CANCELLATION_PATTERN = re.compile(r"승인\s*취소|\(\d+\)\s*취소")
+
 # Expense.item(max_length=100)에 맞춘 길이 상한
 ITEM_MAX_LENGTH = 100
 
@@ -87,7 +92,7 @@ class ParseSMSService:
         취소 문자도 금액과 가맹점 형식이 승인 문자와 같아서, 그대로 파싱하면
         환불이 지출로 한 번 더 기록됩니다.
         """
-        return "취소" in self.message
+        return bool(_CANCELLATION_PATTERN.search(self.message))
 
     def parse(self, enum_representation: Literal["label", "value"] = "label") -> dict:
         """

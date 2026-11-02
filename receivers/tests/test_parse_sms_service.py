@@ -163,6 +163,22 @@ class TestIsCancellation:
         )
         assert ParseSMSService(message).is_cancellation() is True
 
+    def test_shinhan_paren_cancellation_detected(self):
+        message = "[Web발신]\n신한(1234)취소 강*성 10,000원 06/20 14:30 동네카페 잔액60,000원"
+        assert ParseSMSService(message).is_cancellation() is True
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            # 가맹점명에 '취소'가 들어간 정상 승인
+            "[Web발신]\n신한카드(4557)승인 강*성 2,400원(일시불)02/23 16:56 취소불가상점 누적1,427,265원",
+            # 우리 출금 적요에 '취소'가 들어간 경우
+            "[Web발신]\n우리 02/23 11:32\n*746546\n출금 3,000원\n예약취소수수료\n잔액 41,903,664원",
+        ],
+    )
+    def test_word_cancel_in_merchant_is_not_cancellation(self, message):
+        assert ParseSMSService(message).is_cancellation() is False
+
     def test_approval_is_not_cancellation(self):
         message = (
             "[Web발신]\n"

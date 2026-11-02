@@ -231,11 +231,11 @@ Tokens are issued on login: access token lifetime is **24 hours**, refresh token
 |---|---|---|---|
 | `POST` | `/receivers/webhook/` | Shared token | Receive card payment SMS and sync to Notion |
 
-The forwarder app can't do JWT, so the webhook checks a shared secret instead: send `SMS_WEBHOOK_TOKEN` in the `X-Webhook-Token` header, or as `?token=` if the forwarder can't set headers (the query string may end up in access logs, so prefer the header). A missing or wrong token gets `403`. If `SMS_WEBHOOK_TOKEN` is unset the check is skipped with a warning in the log; that exists only so a deploy and the forwarder config change don't have to happen at the same instant. The endpoint is also rate-limited (`SMS_WEBHOOK_THROTTLE_RATE`, default `30/minute`).
+The forwarder app can't do JWT, so the webhook checks a shared secret instead: send `SMS_WEBHOOK_TOKEN` in the `X-Webhook-Token` header, or as `?token=` if the forwarder can't set headers (the query string may end up in access logs, so prefer the header). A missing or wrong token gets `403`. If `SMS_WEBHOOK_TOKEN` is unset the check is skipped, and with `DEBUG=False` the system check `receivers.W001` warns at startup; that gap exists only so a deploy and the forwarder config change don't have to happen at the same instant. The endpoint is also rate-limited (`SMS_WEBHOOK_THROTTLE_RATE`, default `30/minute`) with one global bucket, since the forwarder is the only caller; the limit is checked before the token, so token guessing is limited too. The cache is per-process, so the effective limit is that rate times the number of gunicorn workers.
 
-Supports **Shinhan** and **Woori** card SMS formats. The service parses the raw SMS text into structured data (`amount`, `item`, `payment_method`, `spent_at`) and saves it as an `UNSETTLED` expense and a Notion page in one transaction: the row is written first, and if Notion fails the row is rolled back and the webhook answers `503` so the forwarder can retry. A database error means Notion is never called, so a retry can't leave a duplicate page behind.
+Supports **Shinhan** and **Woori** card SMS formats. The service parses the raw SMS text into structured data (`amount`, `item`, `payment_method`, `spent_at`) and saves it as an `UNSETTLED` expense and a Notion page in one transaction: the row is written first, and if Notion fails the row is rolled back and the webhook answers `503` so the forwarder can retry. A database error means Notion is never called. This is not idempotent, though: if Notion creates the page and then times out, a retry creates a second page.
 
-Cancellation SMS (`승인취소`) are not recorded; the webhook answers `200` with `{"status": "ignored"}`. Recording them the old way counted a refund as a second expense.
+Cancellation SMS (`승인취소`, or `취소` right after the card number) are not recorded; the webhook answers `200` with `{"status": "ignored"}` and logs the message. Recording them the old way counted a refund as a second expense. The original approval stays recorded, so a cancelled purchase still needs to be removed by hand.
 
 The SMS only carries `MM/DD`, so the year is inferred: this year, unless that lands in the future, in which case last year. "Today" is taken in KST (`expenses.constants.LOCAL_TIMEZONE`), not the server's UTC, so payments made between 00:00 and 08:59 KST don't get pushed back a year.
 
@@ -304,17 +304,17 @@ Unmatched `UNSETTLED` rows are reported in two buckets: **ambiguous** (the merch
 
 ## Testing
 
-**153 tests across 15 modules**, run on a dedicated PostgreSQL test database.
-(125 test functions; parametrized suites expand to 153 cases.)
+**160 tests across 15 modules**, run on a dedicated PostgreSQL test database.
+(131 test functions; parametrized suites expand to 160 cases.)
 
 | Module | Tests | What it covers |
 |---|---|---|
 | `receivers/tests/test_normalize_merchant.py` | 30 | Merchant normalization: `(일시불)` / `(할부N개월)` markers, date & time prefixes, corporate forms (`(주)`, `㈜`), idempotency, non-SMS passthrough |
 | `expenses/tests/test_budget_viewset.py` | 20 | Budget CRUD, validation, duplicate guard, edge cases |
 | `expenses/tests/test_auto_classify_service.py` | 21 | Rule learning (single-distribution / ambiguous / low-frequency / key-length boundaries), echo-chamber guard, dry-run vs apply, revert |
-| `receivers/tests/test_parse_sms_service.py` | 22 | Shinhan & Woori SMS parsing, both formats, merchant names containing 잔/액, empty or overlong merchant, cancellation detection |
+| `receivers/tests/test_parse_sms_service.py` | 25 | Shinhan & Woori SMS parsing, both formats, merchant names containing 잔/액, empty or overlong merchant, cancellation detection (and no false positive when a merchant name contains 취소) |
 | `receivers/tests/test_card_payment_service.py` | 11 | `MM/DD` → date (year rollover, leap day, KST vs UTC), Notion and `Expense` get the same date, Notion failure saves nothing |
-| `receivers/tests/test_sms_webhook_security.py` | 10 | Webhook shared token (header, query, missing, wrong), cancellation ignored, Notion failure → `503` + rollback, DB failure skips Notion, rate limit |
+| `receivers/tests/test_sms_webhook_security.py` | 14 | Webhook shared token (header, query, missing, wrong), cancellation ignored, Notion failure → `503` + rollback, DB failure skips Notion, rate limit (spoofed `X-Forwarded-For` and token guessing included), startup warning when the token is unset |
 | `authentication/tests/test_auth.py` | 7 | JWT login / logout / token lifetime |
 | `expenses/tests/test_preview_item_cleanup_command.py` | 6 | `preview_item_cleanup` command — reports impact, mutates nothing |
 | `expenses/tests/test_auto_classify_unsettled_command.py` | 5 | `auto_classify_unsettled` command — dry-run default, `--apply`, `--revert` |

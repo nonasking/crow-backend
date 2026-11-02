@@ -1,9 +1,14 @@
+import logging
+
 from rest_framework import serializers, status
 from rest_framework.exceptions import APIException, ValidationError
 
 from receivers.constants import ParseSMSErrorMessages
 from receivers.services.card_payment_service import record_card_payment
 from receivers.services.parse_sms_service import ParseSMSService
+
+
+logger = logging.getLogger(__name__)
 
 
 class NotionUnavailable(APIException):
@@ -30,6 +35,7 @@ class SMSReceiverPostSerializer(serializers.Serializer):
         service = ParseSMSService(value)
         if service.is_cancellation():
             self.ignored_reason = ParseSMSErrorMessages.CANCELLATION_IGNORED
+            logger.info("SMS webhook: cancellation ignored: %r", value)
             return value
 
         try:

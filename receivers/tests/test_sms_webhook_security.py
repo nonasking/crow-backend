@@ -3,12 +3,12 @@
 from unittest.mock import patch
 
 import pytest
-from django.core.cache import cache
+from django.core.checks import run_checks
 from django.db import DatabaseError
 from rest_framework import status
-from rest_framework.throttling import ScopedRateThrottle
 
 from expenses.models import Expense
+from receivers.throttling import SMSWebhookThrottle
 
 URL = "/receivers/webhook/"
 NOTION_CREATE = "receivers.externals.notion.api_client.NotionClient.create_card_record"
@@ -20,13 +20,6 @@ SHINHAN_CANCEL_MESSAGE = (
     "[Web발신]\n"
     "신한카드(4557)승인취소 강*성 2,400원(일시불)02/23 16:56 세븐일레븐영 누적1,424,865원"
 )
-
-
-@pytest.fixture(autouse=True)
-def _clear_throttle_cache():
-    cache.clear()
-    yield
-    cache.clear()
 
 
 def _post(client, message=SHINHAN_MESSAGE, **extra):
@@ -115,14 +108,57 @@ class TestWebhookFailures:
         mock_create.assert_not_called()
 
 
+@pytest.fixture
+def two_per_minute():
+    # SimpleRateThrottle은 rate 설정을 클래스 속성으로 들고 있으므로 직접 바꾼다.
+    with patch.object(SMSWebhookThrottle, "THROTTLE_RATES", {"sms_webhook": "2/minute"}):
+        yield
+
+
 @pytest.mark.django_db
+@pytest.mark.usefixtures("two_per_minute")
 class TestWebhookThrottle:
     def test_throttled_after_rate_limit(self, client):
-        # ScopedRateThrottle은 rate 설정을 클래스 속성으로 들고 있으므로 직접 바꾼다.
-        with patch.object(
-            ScopedRateThrottle, "THROTTLE_RATES", {"sms_webhook": "2/minute"}
-        ):
-            with patch(NOTION_CREATE):
-                codes = [_post(client).status_code for _ in range(3)]
-        assert codes[:2] == [status.HTTP_200_OK, status.HTTP_200_OK]
+        with patch(NOTION_CREATE):
+            codes = [_post(client).status_code for _ in range(3)]
+        assert codes == [
+            status.HTTP_200_OK,
+            status.HTTP_200_OK,
+            status.HTTP_429_TOO_MANY_REQUESTS,
+        ]
+
+    def test_spoofed_forwarded_for_does_not_bypass(self, client):
+        """X-Forwarded-For를 매번 바꿔도 같은 버킷을 쓴다."""
+        with patch(NOTION_CREATE):
+            codes = [
+                _post(client, HTTP_X_FORWARDED_FOR=f"1.2.3.{i}, 10.0.0.1").status_code
+                for i in range(3)
+            ]
         assert codes[2] == status.HTTP_429_TOO_MANY_REQUESTS
+
+    def test_wrong_token_guesses_are_throttled(self, client, settings):
+        """권한 검사보다 throttle이 먼저라 토큰 추측도 한도에 걸린다."""
+        settings.SMS_WEBHOOK_TOKEN = "s3cret"
+        codes = [
+            _post(client, HTTP_X_WEBHOOK_TOKEN=f"guess-{i}").status_code
+            for i in range(3)
+        ]
+        assert codes == [
+            status.HTTP_403_FORBIDDEN,
+            status.HTTP_403_FORBIDDEN,
+            status.HTTP_429_TOO_MANY_REQUESTS,
+        ]
+
+
+class TestWebhookTokenSystemCheck:
+    def test_warns_when_token_missing_in_production(self, settings):
+        settings.DEBUG = False
+        settings.SMS_WEBHOOK_TOKEN = ""
+        ids = [m.id for m in run_checks()]
+        assert "receivers.W001" in ids
+
+    def test_silent_when_token_set(self, settings):
+        settings.DEBUG = False
+        settings.SMS_WEBHOOK_TOKEN = "s3cret"
+        ids = [m.id for m in run_checks()]
+        assert "receivers.W001" not in ids
