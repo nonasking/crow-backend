@@ -192,3 +192,23 @@ def test_memo_edit_keeps_auto_classified(auth_client):
     assert response.status_code == status.HTTP_200_OK
     expense.refresh_from_db()
     assert expense.auto_classified is True
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("field", ["item", "memo"])
+def test_ordering_by_item_and_memo(auth_client, field):
+    for value in ["나", "가", "다"]:
+        Expense.objects.create(
+            spent_at="2024-05-20",
+            category=ExpenseCategoryEnum.PHONE_BILL,
+            sub_category=ExpenseSubCategoryEnum.PHONE_BILL,
+            item=value,
+            memo=value,
+            payment_method=ExpensePaymentMethodEnum.WOORI,
+            amount=1000,
+        )
+
+    response = auth_client.get(f"/expenses/expenses/?ordering={field}")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert [row[field] for row in response.data["results"]] == ["가", "나", "다"]

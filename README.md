@@ -300,8 +300,8 @@ Unmatched `UNSETTLED` rows are reported in two buckets: **ambiguous** (the merch
 
 ## Testing
 
-**144 tests across 14 modules**, run on a dedicated PostgreSQL test database.
-(116 test functions; parametrized suites expand to 144 cases.)
+**146 tests across 14 modules**, run on a dedicated PostgreSQL test database.
+(117 test functions; parametrized suites expand to 146 cases.)
 
 | Module | Tests | What it covers |
 |---|---|---|
@@ -314,7 +314,7 @@ Unmatched `UNSETTLED` rows are reported in two buckets: **ambiguous** (the merch
 | `expenses/tests/test_preview_item_cleanup_command.py` | 6 | `preview_item_cleanup` command — reports impact, mutates nothing |
 | `expenses/tests/test_auto_classify_unsettled_command.py` | 5 | `auto_classify_unsettled` command — dry-run default, `--apply`, `--revert` |
 | `expenses/tests/test_normalize_sms_items_migration.py` | 5 | Data migration 0005 — forwards, backwards restore from backup, idempotency |
-| `expenses/tests/test_expense_viewset.py` | 8 | Expense CRUD, read-only `auto_classified` (cleared when the category is edited by hand), Notion import, multi-month summary |
+| `expenses/tests/test_expense_viewset.py` | 10 | Expense CRUD, ordering (including `item` / `memo`), read-only `auto_classified` (cleared when the category is edited by hand), Notion import, multi-month summary |
 | `receivers/tests/test_notion_migration.py` | 7 | Notion → DB import: duplicate skipping (including duplicates inside Notion), batched `bulk_create`, budget re-run via the API, `409` on a constraint conflict |
 | `receivers/tests/test_sms_receiver_webhook.py` | 3 | SMS webhook → `Expense` flow with mocked Notion, unsupported card error |
 | `expenses/tests/test_expense_summary.py` | 7 | Summary defaults (year/month, daily budget) follow the KST date; daily budget for past/current/future months; `month` outside 1–12 rejected |
