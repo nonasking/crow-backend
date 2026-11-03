@@ -272,6 +272,8 @@ class NotionClient:
             duplicate_fields=("year", "month", "category", "sub_category"),
             skip_duplicates=skip_duplicates,
             batch_size=batch_size,
+            # 예산은 키가 unique 제약이라 Notion 안의 중복도 한 번만 만든다.
+            dedupe_within_source=True,
         )
 
     def migrate_expense_to_db(
@@ -315,6 +317,7 @@ class NotionClient:
         duplicate_fields: tuple[str, ...],
         skip_duplicates: bool,
         batch_size: int,
+        dedupe_within_source: bool = False,
     ) -> dict:
         pages = self._fetch_all_pages(url=url)
 
@@ -344,8 +347,9 @@ class NotionClient:
             if key in existing_keys:
                 skipped += 1
                 continue
-            if skip_duplicates:
-                # Notion 안에 같은 키가 두 번 있어도 한 번만 만든다.
+            if skip_duplicates and dedupe_within_source:
+                # Notion 안에 같은 키가 두 번 있어도 한 번만 만든다. 지출은 키
+                # (날짜, 항목, 금액)가 같아도 정상 거래(같은 날 지하철 두 번 등)라 적용하지 않는다.
                 existing_keys.add(key)
 
             to_create.append(model(**data))

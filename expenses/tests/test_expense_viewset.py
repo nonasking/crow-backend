@@ -212,3 +212,24 @@ def test_ordering_by_item_and_memo(auth_client, field):
 
     assert response.status_code == status.HTTP_200_OK
     assert [row[field] for row in response.data["results"]] == ["가", "나", "다"]
+
+
+
+@pytest.mark.django_db
+def test_ordering_ties_are_broken_by_id(auth_client):
+    ids = [
+        Expense.objects.create(
+            spent_at="2024-05-20",
+            category=ExpenseCategoryEnum.PHONE_BILL,
+            sub_category=ExpenseSubCategoryEnum.PHONE_BILL,
+            item="같은 항목",
+            memo="",
+            payment_method=ExpensePaymentMethodEnum.WOORI,
+            amount=1000,
+        ).id
+        for _ in range(3)
+    ]
+
+    response = auth_client.get("/expenses/expenses/?ordering=memo")
+
+    assert [row["id"] for row in response.data["results"]] == sorted(ids, reverse=True)

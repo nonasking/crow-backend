@@ -158,10 +158,21 @@ class TestMigrateBudgetEdgeCases:
         assert second.data["created"] == 0
         assert Budget.objects.count() == 1
 
-    def test_conflict_without_skip_returns_409(self, auth_client):
-        pages = [_budget_page("a", 2026, 5, 500000)]
-        with patch.object(NotionClient, "_fetch_all_pages", return_value=pages):
-            auth_client.post("/expenses/budget/migrate-budget-from-notion/", data={}, content_type="application/json")
+    def test_conflict_without_skip_returns_409_and_rolls_back(self, auth_client):
+        Budget.objects.create(
+            year=2026, month=5, category=ExpenseCategoryEnum.FOOD,
+            sub_category=ExpenseSubCategoryEnum.DINING_OUT, amount=1,
+        )
+        # 새 행이 첫 배치, 충돌 행이 둘째 배치에 오게 해서 트랜잭션이 첫 배치까지 되돌리는지 본다.
+        pages = [_budget_page("new", 2026, 6, 500000), _budget_page("dup", 2026, 5, 500000)]
+        with patch.object(NotionClient, "_fetch_all_pages", return_value=pages), \
+                patch.object(NotionClient, "migrate_budget_to_db", autospec=True,
+                             side_effect=lambda self, skip_duplicates: NotionClient._migrate_pages_to_db(
+                                 self, url="u", model=Budget,
+                                 parse_page=self._parse_page_to_budget_data,
+                                 duplicate_fields=("year", "month", "category", "sub_category"),
+                                 skip_duplicates=skip_duplicates, batch_size=1,
+                                 dedupe_within_source=True)):
             response = auth_client.post(
                 "/expenses/budget/migrate-budget-from-notion/",
                 data={"skip_duplicates": False},
@@ -170,3 +181,20 @@ class TestMigrateBudgetEdgeCases:
 
         assert response.status_code == 409
         assert Budget.objects.count() == 1
+        assert not Budget.objects.filter(month=6).exists()
+
+
+
+@pytest.mark.django_db
+class TestMigrateExpenseKeepsSameDayDuplicates:
+    def test_identical_rows_inside_notion_are_all_created(self):
+        """같은 날 같은 가맹점 같은 금액(지하철 두 번 등)은 정상 거래라 둘 다 만들어야 한다."""
+        pages = [
+            _expense_page("p1", "2026-03-01", "지하철", 1450),
+            _expense_page("p2", "2026-03-01", "지하철", 1450),
+        ]
+
+        result = _migrate_expense(pages, skip_duplicates=True)
+
+        assert result["created"] == 2
+        assert Expense.objects.filter(item="지하철").count() == 2

@@ -60,3 +60,10 @@ def test_summary_rejects_out_of_range_month(month):
     serializer = ExpenseSummarySerializer(data={"year": 2026, "month": month})
     assert not serializer.is_valid()
     assert "month" in serializer.errors
+
+
+@pytest.mark.parametrize("year", [0, 1999, 2101, 10000])
+def test_summary_rejects_out_of_range_year(year):
+    serializer = ExpenseSummarySerializer(data={"year": year, "month": 1})
+    assert not serializer.is_valid()
+    assert "year" in serializer.errors
