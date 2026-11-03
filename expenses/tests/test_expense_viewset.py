@@ -4,6 +4,7 @@ import pytest
 from rest_framework import status
 
 from expenses.constants import (
+    CATEGORY_SUBCATEGORY_MAP,
     ExpenseCategoryEnum,
     ExpensePaymentMethodEnum,
     ExpenseSubCategoryEnum,
@@ -139,3 +140,96 @@ def test_summary_single_month_range_is_prorated(auth_client):
     assert response.status_code == status.HTTP_200_OK
     assert response.data["total_budget"] == 31000
     assert response.data["daily_budget"] == 10000
+
+
+@pytest.mark.django_db
+def test_manual_category_edit_clears_auto_classified(auth_client):
+    expense = Expense.objects.create(
+        spent_at="2024-05-20",
+        category=ExpenseCategoryEnum.PHONE_BILL,
+        sub_category=ExpenseSubCategoryEnum.PHONE_BILL,
+        item="통신비",
+        payment_method=ExpensePaymentMethodEnum.WOORI,
+        amount=45000,
+        auto_classified=True,
+    )
+    other = next(
+        (c, s)
+        for c, subs in CATEGORY_SUBCATEGORY_MAP.items()
+        for s in subs
+        if c != ExpenseCategoryEnum.PHONE_BILL
+    )
+
+    response = auth_client.patch(
+        f"/expenses/expenses/{expense.id}/",
+        data={"category": other[0], "sub_category": other[1]},
+        content_type="application/json",
+    )
+
+    assert response.status_code == status.HTTP_200_OK, response.data
+    expense.refresh_from_db()
+    assert expense.auto_classified is False
+
+
+@pytest.mark.django_db
+def test_memo_edit_keeps_auto_classified(auth_client):
+    expense = Expense.objects.create(
+        spent_at="2024-05-20",
+        category=ExpenseCategoryEnum.PHONE_BILL,
+        sub_category=ExpenseSubCategoryEnum.PHONE_BILL,
+        item="통신비",
+        payment_method=ExpensePaymentMethodEnum.WOORI,
+        amount=45000,
+        auto_classified=True,
+    )
+
+    response = auth_client.patch(
+        f"/expenses/expenses/{expense.id}/",
+        data={"memo": "메모만 수정"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    expense.refresh_from_db()
+    assert expense.auto_classified is True
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("field", ["item", "memo"])
+def test_ordering_by_item_and_memo(auth_client, field):
+    for value in ["나", "가", "다"]:
+        Expense.objects.create(
+            spent_at="2024-05-20",
+            category=ExpenseCategoryEnum.PHONE_BILL,
+            sub_category=ExpenseSubCategoryEnum.PHONE_BILL,
+            item=value,
+            memo=value,
+            payment_method=ExpensePaymentMethodEnum.WOORI,
+            amount=1000,
+        )
+
+    response = auth_client.get(f"/expenses/expenses/?ordering={field}")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert [row[field] for row in response.data["results"]] == ["가", "나", "다"]
+
+
+
+@pytest.mark.django_db
+def test_ordering_ties_are_broken_by_id(auth_client):
+    ids = [
+        Expense.objects.create(
+            spent_at="2024-05-20",
+            category=ExpenseCategoryEnum.PHONE_BILL,
+            sub_category=ExpenseSubCategoryEnum.PHONE_BILL,
+            item="같은 항목",
+            memo="",
+            payment_method=ExpensePaymentMethodEnum.WOORI,
+            amount=1000,
+        ).id
+        for _ in range(3)
+    ]
+
+    response = auth_client.get("/expenses/expenses/?ordering=memo")
+
+    assert [row["id"] for row in response.data["results"]] == sorted(ids, reverse=True)

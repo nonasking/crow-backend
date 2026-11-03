@@ -1,5 +1,6 @@
 import django_filters
 from django.db.models import Q
+from rest_framework.filters import OrderingFilter
 
 from expenses.models import Budget, Expense
 
@@ -60,3 +61,19 @@ class BudgetFilter(django_filters.FilterSet):
             "year",
             "month",
         ]
+
+
+class StableOrderingFilter(OrderingFilter):
+    """정렬 기준이 같은 행이 많아도(비고는 대부분 빈 값) 순서가 고정되도록 마지막에 -id를 붙인다.
+
+    동점 행의 순서가 쿼리마다 달라지면 페이지를 넘길 때 행이 중복되거나 빠진다.
+    """
+
+    def get_ordering(self, request, queryset, view):
+        ordering = super().get_ordering(request, queryset, view)
+        if not ordering:
+            return ordering
+        ordering = list(ordering)
+        if not any(field.lstrip("-") in ("id", "pk") for field in ordering):
+            ordering.append("-id")
+        return ordering

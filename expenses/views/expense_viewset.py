@@ -42,6 +42,8 @@ class ExpenseViewSet(ModelViewSet):
         "category",
         "sub_category",
         "payment_method",
+        "item",
+        "memo",
     ]
     ordering = ["-spent_at"]
 
