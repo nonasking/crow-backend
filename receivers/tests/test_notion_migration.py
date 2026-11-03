@@ -198,3 +198,18 @@ class TestMigrateExpenseKeepsSameDayDuplicates:
 
         assert result["created"] == 2
         assert Expense.objects.filter(item="지하철").count() == 2
+
+
+@pytest.mark.django_db
+def test_non_budget_integrity_error_is_not_reported_as_conflict(auth_client):
+    """예산 unique 제약이 아닌 제약 위반은 409("이미 있는 예산과 겹칩니다")로 덮지 않고 그대로 올린다."""
+    from django.db import IntegrityError
+
+    other = IntegrityError('new row violates check constraint "expenses_budget_year_check"')
+    with patch.object(NotionClient, "migrate_budget_to_db", side_effect=other):
+        with pytest.raises(IntegrityError):
+            auth_client.post(
+                "/expenses/budget/migrate-budget-from-notion/",
+                data={"skip_duplicates": False},
+                content_type="application/json",
+            )
