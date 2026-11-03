@@ -4,6 +4,7 @@
 
 from datetime import date
 
+from django.db import transaction
 from django.utils import timezone
 
 from expenses.constants import (
@@ -48,7 +49,15 @@ def resolve_spent_at(spent_at: str, today: date | None = None) -> date:
 
 
 def record_card_payment(parsed: dict) -> Expense:
-    """파싱된 결제 정보를 Notion에 기록하고 UNSETTLED Expense로 저장합니다.
+    """파싱된 결제 정보를 UNSETTLED Expense로 저장하고 Notion에 기록합니다.
+
+    Expense 저장과 Notion 기록을 한 트랜잭션으로 묶습니다. DB 저장을 먼저 해서
+    DB 오류(예: 제약 위반)가 나면 Notion에는 아무것도 남지 않고, Notion 기록이
+    실패하면 Expense 저장도 롤백됩니다.
+
+    멱등성은 보장하지 않습니다. Notion이 페이지를 만든 뒤 타임아웃이 나거나
+    Notion 성공 후 COMMIT이 실패하면, 포워더가 재시도할 때 Notion에 페이지가
+    하나 더 생길 수 있습니다.
 
     Args:
         parsed: ParseSMSService(...).parse(enum_representation="value") 결과
@@ -59,13 +68,14 @@ def record_card_payment(parsed: dict) -> Expense:
     record = {**parsed, "spent_at": resolve_spent_at(parsed["spent_at"])}
     payment_method = ExpensePaymentMethodEnum(record["payment_method"])
 
-    NotionClient().create_card_record(
-        {**record, "payment_method": payment_method.label}
-    )
-
-    # TODO 테스트용 로직: 별도 api로 분리 예정
-    return Expense.objects.create(
-        **record,
-        category=ExpenseCategoryEnum.UNSETTLED,
-        sub_category=ExpenseSubCategoryEnum.UNSETTLED,
-    )
+    with transaction.atomic():
+        # TODO 테스트용 로직: 별도 api로 분리 예정
+        expense = Expense.objects.create(
+            **record,
+            category=ExpenseCategoryEnum.UNSETTLED,
+            sub_category=ExpenseSubCategoryEnum.UNSETTLED,
+        )
+        NotionClient().create_card_record(
+            {**record, "payment_method": payment_method.label}
+        )
+    return expense
