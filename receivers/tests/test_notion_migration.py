@@ -131,3 +131,85 @@ class TestMigrateBudgetToDb:
             "errors": ["bad-month"],
         }
         assert Budget.objects.count() == 2
+
+
+@pytest.mark.django_db
+class TestMigrateBudgetEdgeCases:
+    def test_duplicate_keys_inside_notion_created_once(self):
+        pages = [
+            _budget_page("a", 2026, 5, 500000),
+            _budget_page("b", 2026, 5, 600000),
+        ]
+
+        result = _migrate_budget(pages)
+
+        assert result["created"] == 1
+        assert result["skipped"] == 1
+        assert Budget.objects.count() == 1
+
+    def test_rerun_via_api_default_skips_existing(self, auth_client):
+        pages = [_budget_page("a", 2026, 5, 500000)]
+        with patch.object(NotionClient, "_fetch_all_pages", return_value=pages):
+            first = auth_client.post("/expenses/budget/migrate-budget-from-notion/", data={}, content_type="application/json")
+            second = auth_client.post("/expenses/budget/migrate-budget-from-notion/", data={}, content_type="application/json")
+
+        assert first.status_code == 200, first.data
+        assert second.status_code == 200, second.data
+        assert second.data["created"] == 0
+        assert Budget.objects.count() == 1
+
+    def test_conflict_without_skip_returns_409_and_rolls_back(self, auth_client):
+        Budget.objects.create(
+            year=2026, month=5, category=ExpenseCategoryEnum.FOOD,
+            sub_category=ExpenseSubCategoryEnum.DINING_OUT, amount=1,
+        )
+        # 새 행이 첫 배치, 충돌 행이 둘째 배치에 오게 해서 트랜잭션이 첫 배치까지 되돌리는지 본다.
+        pages = [_budget_page("new", 2026, 6, 500000), _budget_page("dup", 2026, 5, 500000)]
+        with patch.object(NotionClient, "_fetch_all_pages", return_value=pages), \
+                patch.object(NotionClient, "migrate_budget_to_db", autospec=True,
+                             side_effect=lambda self, skip_duplicates: NotionClient._migrate_pages_to_db(
+                                 self, url="u", model=Budget,
+                                 parse_page=self._parse_page_to_budget_data,
+                                 duplicate_fields=("year", "month", "category", "sub_category"),
+                                 skip_duplicates=skip_duplicates, batch_size=1,
+                                 dedupe_within_source=True)):
+            response = auth_client.post(
+                "/expenses/budget/migrate-budget-from-notion/",
+                data={"skip_duplicates": False},
+                content_type="application/json",
+            )
+
+        assert response.status_code == 409
+        assert Budget.objects.count() == 1
+        assert not Budget.objects.filter(month=6).exists()
+
+
+
+@pytest.mark.django_db
+class TestMigrateExpenseKeepsSameDayDuplicates:
+    def test_identical_rows_inside_notion_are_all_created(self):
+        """같은 날 같은 가맹점 같은 금액(지하철 두 번 등)은 정상 거래라 둘 다 만들어야 한다."""
+        pages = [
+            _expense_page("p1", "2026-03-01", "지하철", 1450),
+            _expense_page("p2", "2026-03-01", "지하철", 1450),
+        ]
+
+        result = _migrate_expense(pages, skip_duplicates=True)
+
+        assert result["created"] == 2
+        assert Expense.objects.filter(item="지하철").count() == 2
+
+
+@pytest.mark.django_db
+def test_non_budget_integrity_error_is_not_reported_as_conflict(auth_client):
+    """예산 unique 제약이 아닌 제약 위반은 409("이미 있는 예산과 겹칩니다")로 덮지 않고 그대로 올린다."""
+    from django.db import IntegrityError
+
+    other = IntegrityError('new row violates check constraint "expenses_budget_year_check"')
+    with patch.object(NotionClient, "migrate_budget_to_db", side_effect=other):
+        with pytest.raises(IntegrityError):
+            auth_client.post(
+                "/expenses/budget/migrate-budget-from-notion/",
+                data={"skip_duplicates": False},
+                content_type="application/json",
+            )

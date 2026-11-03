@@ -53,6 +53,18 @@ class ExpenseSerializer(CategoryValidationMixin, serializers.ModelSerializer):
         )
         return attrs
 
+    def update(self, instance, validated_data):
+        # 사용자가 분류를 직접 고쳤다면 더 이상 자동분류 결과가 아니다.
+        # 플래그를 남겨 두면 수동 수정분이 학습 대상(auto_classified=False)에서 계속
+        # 빠지고, --revert 때 사용자가 고친 값까지 UNSETTLED로 되돌아간다.
+        if instance.auto_classified and any(
+            field in validated_data
+            and validated_data[field] != getattr(instance, field)
+            for field in ("category", "sub_category")
+        ):
+            validated_data["auto_classified"] = False
+        return super().update(instance, validated_data)
+
 
 class BudgetSerializer(CategoryValidationMixin, serializers.ModelSerializer):
     class Meta:

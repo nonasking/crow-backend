@@ -63,8 +63,13 @@ def summarize_expenses(
             or 0
         )
         days_in_month = calendar.monthrange(year, month)[1]
-        # 폴백: 오늘까지
-        delta_days = today.day
+        # 폴백: 이번 달이면 오늘까지, 지난 달이면 한 달 전체, 앞으로 올 달이면 0일
+        if (year, month) == (today.year, today.month):
+            delta_days = today.day
+        elif (year, month) < (today.year, today.month):
+            delta_days = days_in_month
+        else:
+            delta_days = 0
         daily_budget = round(total_budget / days_in_month * delta_days)
 
         expense_qs = expense_qs.filter(
