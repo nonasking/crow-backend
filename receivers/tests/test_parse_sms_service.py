@@ -121,3 +121,67 @@ class TestParseUnsupported:
     def test_unsupported_company_raises(self):
         with pytest.raises(ValueError):
             ParseSMSService("[Web발신]\n국민카드 ...").parse()
+
+
+class TestShinhanParenLocationRegex:
+    """패턴2 가맹점 정규식 회귀: '잔'·'액' 글자가 들어간 가맹점명이 잘리지 않아야 한다."""
+
+    @staticmethod
+    def _message(location: str, tail: str = " 잔액50,000원") -> str:
+        return f"[Web발신]\n신한(1234)승인 강*성 10,000원 06/20 14:30 {location}{tail}"
+
+    @pytest.mark.parametrize(
+        "location", ["잔치국수", "카페액자", "액세서리잔", "동네 카페"]
+    )
+    def test_location_with_jan_or_aek_kept_whole(self, location):
+        result = ParseSMSService(self._message(location)).parse()
+        assert result["item"] == location
+
+    def test_location_without_balance_suffix(self):
+        result = ParseSMSService(self._message("동네카페", tail="")).parse()
+        assert result["item"] == "동네카페"
+
+    def test_location_missing_raises(self):
+        message = "[Web발신]\n신한(1234)승인 강*성 10,000원 06/20 14:30 잔액50,000원"
+        with pytest.raises(ValueError):
+            ParseSMSService(message).parse()
+
+
+class TestItemValidation:
+    def test_item_truncated_to_model_max_length(self):
+        long_name = "가" * 150
+        message = f"[Web발신]\n신한(1234)승인 강*성 10,000원 06/20 14:30 {long_name} 잔액50,000원"
+        result = ParseSMSService(message).parse()
+        assert result["item"] == "가" * 100
+
+
+class TestIsCancellation:
+    def test_shinhan_cancellation_detected(self):
+        message = (
+            "[Web발신]\n"
+            "신한카드(4557)승인취소 강*성 2,400원(일시불)02/23 16:56 세븐일레븐영 누적1,424,865원"
+        )
+        assert ParseSMSService(message).is_cancellation() is True
+
+    def test_shinhan_paren_cancellation_detected(self):
+        message = "[Web발신]\n신한(1234)취소 강*성 10,000원 06/20 14:30 동네카페 잔액60,000원"
+        assert ParseSMSService(message).is_cancellation() is True
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            # 가맹점명에 '취소'가 들어간 정상 승인
+            "[Web발신]\n신한카드(4557)승인 강*성 2,400원(일시불)02/23 16:56 취소불가상점 누적1,427,265원",
+            # 우리 출금 적요에 '취소'가 들어간 경우
+            "[Web발신]\n우리 02/23 11:32\n*746546\n출금 3,000원\n예약취소수수료\n잔액 41,903,664원",
+        ],
+    )
+    def test_word_cancel_in_merchant_is_not_cancellation(self, message):
+        assert ParseSMSService(message).is_cancellation() is False
+
+    def test_approval_is_not_cancellation(self):
+        message = (
+            "[Web발신]\n"
+            "신한카드(4557)승인 강*성 2,400원(일시불)02/23 16:56 세븐일레븐영 누적1,427,265원"
+        )
+        assert ParseSMSService(message).is_cancellation() is False
