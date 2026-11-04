@@ -3,6 +3,8 @@
 import pytest
 from django.contrib.auth.models import User
 from rest_framework import status
+from datetime import timedelta
+
 from rest_framework_simplejwt.tokens import RefreshToken
 
 URL = "/auth/refresh/"
@@ -31,6 +33,7 @@ class TestTokenRefresh:
 
     def test_refresh_is_not_rotated(self, client, user):
         response = _post(client, {"refresh": str(RefreshToken.for_user(user))})
+        assert response.status_code == status.HTTP_200_OK
         assert "refresh" not in response.data
 
     def test_invalid_refresh_is_401(self, client):
@@ -62,3 +65,46 @@ class TestTokenRefresh:
         response = _post(client, {"refresh": refresh})
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+    def test_expired_refresh_is_401(self, client, user):
+        refresh = RefreshToken.for_user(user)
+        refresh.set_exp(lifetime=-timedelta(seconds=1))
+
+        assert _post(client, {"refresh": str(refresh)}).status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_deleted_user_refresh_is_401_not_500(self, client, user):
+        refresh = str(RefreshToken.for_user(user))
+        user.delete()
+
+        response = _post(client, {"refresh": refresh})
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.django_db
+class TestLogoutRevokesRefresh:
+    def test_refresh_rejected_after_logout(self, client, user):
+        refresh = str(RefreshToken.for_user(user))
+
+        assert client.post("/auth/logout/", {"refresh": refresh}, content_type="application/json").status_code == 200
+        assert _post(client, {"refresh": refresh}).status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_other_sessions_keep_working(self, client, user):
+        """한 기기에서 로그아웃해도 다른 refresh 토큰은 그대로 쓸 수 있다."""
+        logged_out = str(RefreshToken.for_user(user))
+        other = str(RefreshToken.for_user(user))
+
+        client.post("/auth/logout/", {"refresh": logged_out}, content_type="application/json")
+
+        assert _post(client, {"refresh": other}).status_code == status.HTTP_200_OK
+
+    def test_logout_with_garbage_refresh_is_still_200(self, client):
+        response = client.post("/auth/logout/", {"refresh": "garbage"}, content_type="application/json")
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_logout_twice_is_harmless(self, client, user):
+        refresh = str(RefreshToken.for_user(user))
+        for _ in range(2):
+            response = client.post("/auth/logout/", {"refresh": refresh}, content_type="application/json")
+            assert response.status_code == status.HTTP_200_OK
