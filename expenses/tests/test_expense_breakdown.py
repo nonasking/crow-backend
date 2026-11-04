@@ -77,7 +77,9 @@ class TestExpenseBreakdown:
         assert data["total"] == 4000
         assert data["count"] == listed["count"] == 2
 
-    def test_ignores_pagination_and_ordering_params(self, auth_client):
+    def test_result_does_not_depend_on_pagination_or_ordering_params(self, auth_client):
+        # 페이지·정렬 파라미터를 줘도 전체 기준 집계가 그대로 나오는지 본다.
+        # (집계 SQL에 정렬 컬럼이 섞이지 않는 것은 서비스의 order_by()가 막는다)
         for day in range(1, 4):
             _expense(f"2026-03-{day:02d}", 1000)
 
@@ -94,6 +96,19 @@ class TestExpenseBreakdown:
 
         assert data["total"] == 6000
         assert data["by_category"][0]["total"] == 6000
+
+    def test_month_and_year_boundaries(self, auth_client):
+        for spent_at in ["2025-12-31", "2026-01-01", "2026-03-31", "2026-04-01"]:
+            _expense(spent_at, 1000)
+
+        data = auth_client.get(URL).data
+
+        assert [(m["month"], m["count"]) for m in data["by_month"]] == [
+            ("2025-12", 1),
+            ("2026-01", 1),
+            ("2026-03", 1),
+            ("2026-04", 1),
+        ]
 
     def test_category_ties_are_ordered_by_value(self, auth_client):
         _expense("2026-03-01", 1000, category=ExpenseCategoryEnum.TRANSPORT)
