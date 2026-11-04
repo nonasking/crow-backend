@@ -55,6 +55,8 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'django_filters',
     'rest_framework_simplejwt',
+    # 로그아웃한 refresh 토큰을 거절하기 위한 blacklist (마이그레이션 필요)
+    'rest_framework_simplejwt.token_blacklist',
     'authentication',
 ]
 

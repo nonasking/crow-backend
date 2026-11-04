@@ -67,7 +67,8 @@ def test_logout_authenticated(auth_client):
 
 
 @pytest.mark.django_db
-def test_logout_unauthenticated(client):
+def test_logout_without_access_token_still_succeeds(client):
+    """access가 만료된 뒤에도 refresh를 무효화할 수 있도록 로그아웃은 인증을 요구하지 않는다."""
     response = client.post("/auth/logout/")
 
-    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert response.status_code == status.HTTP_200_OK
