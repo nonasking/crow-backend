@@ -13,10 +13,12 @@ from expenses.filters import ExpenseFilter
 from expenses.models.expense import Expense
 from expenses.pagination import DefaultPagination
 from expenses.serializers.api_serializers import (
+    ExpenseBreakdownSerializer,
     ExpenseSummarySerializer,
     NotionExpenseMigrateSerializer,
 )
 from expenses.serializers.model_serializers import ExpenseSerializer
+from expenses.services.expense_breakdown_service import breakdown_expenses
 from expenses.views.notion_migration import run_notion_migration
 
 
@@ -74,6 +76,21 @@ class ExpenseViewSet(ModelViewSet):
                 },
             }
         )
+
+    @extend_schema(
+        summary="지출 차트 집계 (대분류별·월별)",
+        description=(
+            "목록 API와 같은 필터를 적용한 전체 지출을 대분류별·월별로 합산한다. "
+            "페이지네이션·정렬 파라미터는 무시한다."
+        ),
+        # 목록과 같은 필터 파라미터를 문서에 노출하고, 응답은 집계 형태로 선언한다.
+        filters=True,
+        responses=ExpenseBreakdownSerializer,
+    )
+    @action(detail=False, methods=["get"], pagination_class=None)
+    def breakdown(self, request):
+        queryset = self.filter_queryset(self.get_queryset())
+        return Response(breakdown_expenses(queryset))
 
     @extend_schema(summary="지출 요약 조회")
     @action(detail=False, methods=["get"], serializer_class=ExpenseSummarySerializer)

@@ -48,3 +48,25 @@ class ExpenseSummarySerializer(serializers.Serializer):
             spent_at_after=data.get("spent_at_after"),
             spent_at_before=data.get("spent_at_before"),
         )
+
+
+class _BreakdownCategorySerializer(serializers.Serializer):
+    category = serializers.CharField()
+    label = serializers.CharField()
+    total = serializers.IntegerField()
+    count = serializers.IntegerField()
+
+
+class _BreakdownMonthSerializer(serializers.Serializer):
+    month = serializers.CharField(help_text="YYYY-MM")
+    total = serializers.IntegerField()
+    count = serializers.IntegerField()
+
+
+class ExpenseBreakdownSerializer(serializers.Serializer):
+    """GET /expenses/expenses/breakdown/ 응답 (OpenAPI 문서용)."""
+
+    total = serializers.IntegerField()
+    count = serializers.IntegerField()
+    by_category = _BreakdownCategorySerializer(many=True)
+    by_month = _BreakdownMonthSerializer(many=True)
