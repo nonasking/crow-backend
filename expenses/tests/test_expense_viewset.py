@@ -143,6 +143,41 @@ def test_summary_single_month_range_is_prorated(auth_client):
 
 
 @pytest.mark.django_db
+def test_summary_filters_by_sub_category(auth_client):
+    """대분류와 소분류를 함께 고르면 예산·지출 모두 소분류 기준으로 센다."""
+    from expenses.models import Budget
+
+    allowance = ExpenseCategoryEnum.ALLOWANCE
+    for sub, amount in [
+        (ExpenseSubCategoryEnum.ALLOWANCE_MS, 100),
+        (ExpenseSubCategoryEnum.ALLOWANCE_MK, 999),
+    ]:
+        Expense.objects.create(
+            amount=amount, spent_at="2026-03-05", category=allowance, sub_category=sub
+        )
+    Budget.objects.create(
+        year=2026, month=3, category=allowance,
+        sub_category=ExpenseSubCategoryEnum.ALLOWANCE_MS, amount=31000,
+    )
+    Budget.objects.create(
+        year=2026, month=3, category=allowance,
+        sub_category=ExpenseSubCategoryEnum.ALLOWANCE_MK, amount=62000,
+    )
+
+    response = auth_client.get(
+        "/expenses/expenses/summary/"
+        "?year=2026&month=3&spent_at_after=2026-03-01&spent_at_before=2026-03-31"
+        f"&category={allowance}&sub_category={ExpenseSubCategoryEnum.ALLOWANCE_MS}"
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["total_budget"] == 31000
+    assert response.data["daily_budget"] == 31000
+    assert response.data["total_spent"] == 100
+    assert response.data["count"] == 1
+
+
+@pytest.mark.django_db
 def test_manual_category_edit_clears_auto_classified(auth_client):
     expense = Expense.objects.create(
         spent_at="2024-05-20",
