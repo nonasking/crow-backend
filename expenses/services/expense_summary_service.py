@@ -12,6 +12,7 @@ def summarize_expenses(
     year: int,
     month: int,
     categories: list[str] | None = None,
+    sub_categories: list[str] | None = None,
     spent_at_after: date | None = None,
     spent_at_before: date | None = None,
     today: date | None = None,
@@ -20,6 +21,7 @@ def summarize_expenses(
 
     spent_at_after/spent_at_before가 둘 다 있으면 그 기간 기준으로,
     아니면 year/month 한 달 기준으로 집계한다.
+    대분류·소분류는 목록 필터와 같이 둘 다 만족하는(AND) 것만 센다.
     """
     today = today or timezone.localdate(timezone=LOCAL_TIMEZONE)
 
@@ -28,6 +30,9 @@ def summarize_expenses(
     if categories:
         budget_qs = budget_qs.filter(category__in=categories)
         expense_qs = expense_qs.filter(category__in=categories)
+    if sub_categories:
+        budget_qs = budget_qs.filter(sub_category__in=sub_categories)
+        expense_qs = expense_qs.filter(sub_category__in=sub_categories)
 
     if spent_at_after and spent_at_before:
         # 기간이 여러 달에 걸칠 수 있으므로 달마다 겹치는 일수만큼 예산을 일할한다

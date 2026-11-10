@@ -29,6 +29,7 @@ class ExpenseSummarySerializer(serializers.Serializer):
     year = serializers.IntegerField(required=False, min_value=2000, max_value=2100)
     month = serializers.IntegerField(required=False, min_value=1, max_value=12)
     category = serializers.CharField(required=False)
+    sub_category = serializers.CharField(required=False)
     spent_at_after = serializers.DateField(required=False)
     spent_at_before = serializers.DateField(required=False)
 
@@ -41,10 +42,12 @@ class ExpenseSummarySerializer(serializers.Serializer):
     def summary(self):
         data = self.validated_data
         categories = data.get("category")
+        sub_categories = data.get("sub_category")
         return summarize_expenses(
             year=data["year"],
             month=data["month"],
             categories=categories.split(",") if categories else None,
+            sub_categories=sub_categories.split(",") if sub_categories else None,
             spent_at_after=data.get("spent_at_after"),
             spent_at_before=data.get("spent_at_before"),
         )
