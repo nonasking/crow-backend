@@ -128,6 +128,10 @@ NOTION_VERSION=2022-06-28
 # Shared secret for the SMS webhook (see "SMS Receiver" below).
 # Leave empty only for local development.
 SMS_WEBHOOK_TOKEN=a-long-random-string
+
+# Optional. KRW exchange-rate endpoint for overseas SMS charged in dollars
+# (Frankfurter-compatible; defaults to https://api.frankfurter.dev/v1/latest).
+# EXCHANGE_RATE_API_URL=https://api.frankfurter.dev/v1/latest
 ```
 
 > The app reads `.env.{DJANGO_ENV}` where `DJANGO_ENV` defaults to `local`.
@@ -241,6 +245,8 @@ The forwarder app can't do JWT, so the webhook checks a shared secret instead: s
 
 Supports **Shinhan** and **Woori** card SMS formats. The service parses the raw SMS text into structured data (`amount`, `item`, `payment_method`, `spent_at`) and saves it as an `UNSETTLED` expense and a Notion page in one transaction: the row is written first, and if Notion fails the row is rolled back and the webhook answers `503` so the forwarder can retry. A database error means Notion is never called. This is not idempotent, though: if Notion creates the page and then times out, a retry creates a second page.
 
+Shinhan overseas approvals (`신한(1234)해외승인 ...`) come in two shapes. `KRW 37,730` is recorded as is. `220.00 달러` has no won amount, so the dollar amount is converted at the time the SMS arrives using the ECB reference rate from [Frankfurter](https://frankfurter.dev) (no API key), rounded half-up to the won, and the original amount and rate go into the memo (`USD 220.00 (환율 1,336.90 적용)`), which is also sent to Notion's `비고`. This is an estimate: the card company bills at the settlement-day rate plus overseas fees, so fix the amount from the statement if it matters. If the rate lookup fails nothing is recorded and the webhook answers `503`, like a Notion failure. Other currencies are rejected as a parse error (`400`).
+
 Cancellation SMS (`승인취소`, or `취소` right after the card number) are not recorded; the webhook answers `200` with `{"status": "ignored"}` and logs the message. Recording them the old way counted a refund as a second expense. The original approval stays recorded, so a cancelled purchase still needs to be removed by hand.
 
 The SMS only carries `MM/DD`, so the year is inferred: this year, unless that lands in the future, in which case last year. "Today" is taken in KST (`expenses.constants.LOCAL_TIMEZONE`), not the server's UTC, so payments made between 00:00 and 08:59 KST don't get pushed back a year.
@@ -310,17 +316,18 @@ Unmatched `UNSETTLED` rows are reported in two buckets: **ambiguous** (the merch
 
 ## Testing
 
-**202 tests across 17 modules**, run on a dedicated PostgreSQL test database.
-(166 test functions; parametrized suites expand to 202 cases.)
+**224 tests across 18 modules**, run on a dedicated PostgreSQL test database.
+(184 test functions; parametrized suites expand to 224 cases.)
 
 | Module | Tests | What it covers |
 |---|---|---|
 | `receivers/tests/test_normalize_merchant.py` | 30 | Merchant normalization: `(일시불)` / `(할부N개월)` markers, date & time prefixes, corporate forms (`(주)`, `㈜`), idempotency, non-SMS passthrough |
 | `expenses/tests/test_budget_viewset.py` | 20 | Budget CRUD, validation, duplicate guard, edge cases |
 | `expenses/tests/test_auto_classify_service.py` | 21 | Rule learning (single-distribution / ambiguous / low-frequency / key-length boundaries), echo-chamber guard, dry-run vs apply, revert |
-| `receivers/tests/test_parse_sms_service.py` | 25 | Shinhan & Woori SMS parsing, both formats, merchant names containing 잔/액, empty or overlong merchant, cancellation detection (and no false positive when a merchant name contains 취소) |
-| `receivers/tests/test_card_payment_service.py` | 11 | `MM/DD` → date (year rollover, leap day, KST vs UTC), Notion and `Expense` get the same date, Notion failure saves nothing |
-| `receivers/tests/test_sms_webhook_security.py` | 14 | Webhook shared token (header, query, missing, wrong), cancellation ignored, Notion failure → `503` + rollback, DB failure skips Notion, rate limit (spoofed `X-Forwarded-For` and token guessing included), startup warning when the token is unset |
+| `receivers/tests/test_parse_sms_service.py` | 34 | Shinhan & Woori SMS parsing, both formats, Shinhan overseas (`KRW` and `달러` amounts, unknown currency rejected), merchant names containing 잔/액, empty or overlong merchant, cancellation detection (and no false positive when a merchant name contains 취소) |
+| `receivers/tests/test_card_payment_service.py` | 16 | `MM/DD` → date (year rollover, leap day, KST vs UTC), Notion and `Expense` get the same date, Notion failure saves nothing, dollar → won conversion (half-up rounding, memo) reaches both `Expense` and Notion, rate failure saves nothing |
+| `receivers/tests/test_exchange_rate_client.py` | 7 | Exchange-rate client: rate returned as `Decimal`, HTTP error / missing or zero rate / bad JSON / network error raise `ExchangeRateError` |
+| `receivers/tests/test_sms_webhook_security.py` | 15 | Webhook shared token (header, query, missing, wrong), cancellation ignored, Notion failure → `503` + rollback, exchange-rate failure → `503`, DB failure skips Notion, rate limit (spoofed `X-Forwarded-For` and token guessing included), startup warning when the token is unset |
 | `authentication/tests/test_auth.py` | 7 | JWT login / logout (works without an access token) / token lifetime |
 | `authentication/tests/test_refresh.py` | 13 | Access-token refresh: usable new access, no rotation, invalid/expired/access-as-refresh/missing token, stale `Authorization` header ignored, inactive or deleted user → `401`; logout revokes only the given refresh token, garbage or repeated logout is harmless |
 | `expenses/tests/test_preview_item_cleanup_command.py` | 6 | `preview_item_cleanup` command — reports impact, mutates nothing |
@@ -372,7 +379,7 @@ crow-backend/
 ├── receivers/
 │   ├── views/            # SMS webhook endpoint
 │   ├── services/         # ParseSMSService, normalize_merchant, card_payment_service
-│   └── externals/notion/ # Notion API client
+│   └── externals/        # Notion and exchange-rate API clients
 ├── analytics/            # Scaffolded only — no models, views, or routes yet
 ├── conftest.py           # Shared pytest fixtures
 └── pyproject.toml        # Dependencies and tooling config
