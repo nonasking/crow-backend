@@ -5,6 +5,7 @@ receivers/services.py
 """
 
 import re
+from decimal import Decimal
 from typing import Literal
 
 from expenses.constants import ExpensePaymentMethodEnum
@@ -28,10 +29,17 @@ _WHITESPACE_PATTERN = re.compile(r"\s+")
 _SHINHAN_PAREN_LOCATION_PATTERN = re.compile(r"\d{2}:\d{2}\s+(?!잔액)(.+?)(?=\s*잔액|\s*$)")
 
 # 신한 해외승인: "신한(4557)해외승인 강*성 KRW 37,730 (US)11/11 13:56 ELEVENLABS 누적1,682,643원"
-#  - 금액은 "원" 대신 앞에 통화 코드가 붙는다. 원화(KRW) 청구분만 받는다.
+#       "신한(4557)해외승인 강*성 220.00 달러 (US)11/11 22:34 ANTHROPIC* 누적2,027,221원"
+#  - 금액은 "KRW 37,730"(원화) 또는 "220.00 달러"(외화) 형식이다.
+#    외화 금액은 파서에서 환산하지 않고 foreign_amount/currency로 넘긴다.
 #  - 가맹점은 'MM/DD HH:MM' 뒤부터 '누적' 앞(또는 줄 끝)까지.
 _SHINHAN_OVERSEAS_PATTERN = re.compile(r"신한\(\d+\)해외승인")
 _SHINHAN_OVERSEAS_AMOUNT_PATTERN = re.compile(r"\bKRW\s*(\d[\d,]*)")
+_SHINHAN_OVERSEAS_FOREIGN_AMOUNT_PATTERN = re.compile(
+    r"(\d[\d,]*(?:\.\d+)?)\s*(달러)(?=\s|\(|$)"
+)
+# 문자에 찍히는 통화 단위 → ISO 4217 코드
+_FOREIGN_CURRENCY_CODES = {"달러": "USD"}
 _SHINHAN_OVERSEAS_LOCATION_PATTERN = re.compile(
     r"\d{2}/\d{2}\s+\d{2}:\d{2}\s+(?!누적)(.+?)(?=\s*누적|\s*$)", re.MULTILINE
 )
@@ -109,6 +117,8 @@ class ParseSMSService:
 
         Returns:
             {"amount": int, "item": str, "payment_method": str, "spent_at": str}
+            외화 해외승인 문자는 amount가 None이고 "foreign_amount"(Decimal),
+            "currency"(ISO 코드)가 추가된다. 환산은 record_card_payment가 한다.
 
         Raises:
             ValueError: 파싱 실패 또는 지원하지 않는 카드사
@@ -154,16 +164,22 @@ class ParseSMSService:
         # 패턴 3: "신한(xxxx)해외승인 ... KRW 37,730 (US)MM/DD HH:MM 가맹점 누적..." 형식
         # "신한("을 포함하므로 패턴 2보다 먼저 검사해야 한다.
         if _SHINHAN_OVERSEAS_PATTERN.search(self.message):
-            amount_match = _SHINHAN_OVERSEAS_AMOUNT_PATTERN.search(self.message)
-            if not amount_match:
-                # USD 등 외화 표기 문자는 원화 금액을 알 수 없으므로 받지 않는다.
-                raise ValueError(ParseSMSErrorMessages.INVALID_FORMAT)
-            amount = int(amount_match.group(1).replace(",", ""))
-
             location_match = _SHINHAN_OVERSEAS_LOCATION_PATTERN.search(self.message)
             location = location_match.group(1).strip() if location_match else ""
 
-            return self._build_result(amount, location, payment_method, spent_at)
+            krw_match = _SHINHAN_OVERSEAS_AMOUNT_PATTERN.search(self.message)
+            if krw_match:
+                amount = int(krw_match.group(1).replace(",", ""))
+                return self._build_result(amount, location, payment_method, spent_at)
+
+            foreign_match = _SHINHAN_OVERSEAS_FOREIGN_AMOUNT_PATTERN.search(self.message)
+            if not foreign_match:
+                raise ValueError(ParseSMSErrorMessages.INVALID_FORMAT)
+            # 원화 금액(amount)은 기록 단계에서 환율로 환산해 채운다.
+            result = self._build_result(None, location, payment_method, spent_at)
+            result["foreign_amount"] = Decimal(foreign_match.group(1).replace(",", ""))
+            result["currency"] = _FOREIGN_CURRENCY_CODES[foreign_match.group(2)]
+            return result
 
         # 패턴 2: "신한(xxxx)승인 ..." 형식 (민생회복 등)
         if "신한(" in self.message:
@@ -224,7 +240,7 @@ class ParseSMSService:
 
     @staticmethod
     def _build_result(
-        amount: int, item: str, payment_method: str, spent_at: str
+        amount: int | None, item: str, payment_method: str, spent_at: str
     ) -> dict:
         item = item.strip()
         if not item:

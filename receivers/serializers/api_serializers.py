@@ -4,6 +4,7 @@ from rest_framework import serializers, status
 from rest_framework.exceptions import APIException, ValidationError
 
 from receivers.constants import ParseSMSErrorMessages
+from receivers.externals.exchange_rate.api_client import ExchangeRateError
 from receivers.services.card_payment_service import record_card_payment
 from receivers.services.parse_sms_service import ParseSMSService
 
@@ -17,6 +18,14 @@ class NotionUnavailable(APIException):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     default_detail = ParseSMSErrorMessages.NOTION_FAILED
     default_code = "notion_unavailable"
+
+
+class ExchangeRateUnavailable(APIException):
+    """해외승인 외화 금액의 환율 조회 실패. 포워더가 재시도할 수 있도록 5xx로 응답한다."""
+
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = ParseSMSErrorMessages.EXCHANGE_RATE_FAILED
+    default_code = "exchange_rate_unavailable"
 
 
 class SMSReceiverPostSerializer(serializers.Serializer):
@@ -52,5 +61,8 @@ class SMSReceiverPostSerializer(serializers.Serializer):
         """
         try:
             return record_card_payment(self.parsed_result)
+        except ExchangeRateError:
+            # RuntimeError의 하위 클래스이므로 Notion 실패보다 먼저 잡는다.
+            raise ExchangeRateUnavailable()
         except RuntimeError:
             raise NotionUnavailable()
