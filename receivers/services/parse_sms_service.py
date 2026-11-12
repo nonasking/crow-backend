@@ -27,6 +27,15 @@ _WHITESPACE_PATTERN = re.compile(r"\s+")
 # "잔치국수"가 빈 문자열, "카페액자"가 "카페"로 잘린다.
 _SHINHAN_PAREN_LOCATION_PATTERN = re.compile(r"\d{2}:\d{2}\s+(?!잔액)(.+?)(?=\s*잔액|\s*$)")
 
+# 신한 해외승인: "신한(4557)해외승인 강*성 KRW 37,730 (US)11/11 13:56 ELEVENLABS 누적1,682,643원"
+#  - 금액은 "원" 대신 앞에 통화 코드가 붙는다. 원화(KRW) 청구분만 받는다.
+#  - 가맹점은 'MM/DD HH:MM' 뒤부터 '누적' 앞(또는 줄 끝)까지.
+_SHINHAN_OVERSEAS_PATTERN = re.compile(r"신한\(\d+\)해외승인")
+_SHINHAN_OVERSEAS_AMOUNT_PATTERN = re.compile(r"\bKRW\s*(\d[\d,]*)")
+_SHINHAN_OVERSEAS_LOCATION_PATTERN = re.compile(
+    r"\d{2}/\d{2}\s+\d{2}:\d{2}\s+(?!누적)(.+?)(?=\s*누적|\s*$)", re.MULTILINE
+)
+
 # 승인취소 문자 판별: "승인취소" 또는 카드번호 괄호 바로 뒤의 "취소".
 # 문자 전체에서 "취소"를 찾으면 가맹점명("취소불가상점")이나 적요("예약취소수수료")에
 # 걸려 정상 지출이 기록되지 않는다.
@@ -139,6 +148,20 @@ class ParseSMSService:
                 location = location[:idx].strip()
 
             location = normalize_merchant(location)
+
+            return self._build_result(amount, location, payment_method, spent_at)
+
+        # 패턴 3: "신한(xxxx)해외승인 ... KRW 37,730 (US)MM/DD HH:MM 가맹점 누적..." 형식
+        # "신한("을 포함하므로 패턴 2보다 먼저 검사해야 한다.
+        if _SHINHAN_OVERSEAS_PATTERN.search(self.message):
+            amount_match = _SHINHAN_OVERSEAS_AMOUNT_PATTERN.search(self.message)
+            if not amount_match:
+                # USD 등 외화 표기 문자는 원화 금액을 알 수 없으므로 받지 않는다.
+                raise ValueError(ParseSMSErrorMessages.INVALID_FORMAT)
+            amount = int(amount_match.group(1).replace(",", ""))
+
+            location_match = _SHINHAN_OVERSEAS_LOCATION_PATTERN.search(self.message)
+            location = location_match.group(1).strip() if location_match else ""
 
             return self._build_result(amount, location, payment_method, spent_at)
 
