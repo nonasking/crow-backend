@@ -7,6 +7,8 @@ payment_method 추출에 회귀가 없는지 검증한다.
 settings 로딩이 필요하다. 그러나 ORM은 쓰지 않으므로 django_db 마크는 불필요.
 """
 
+from decimal import Decimal
+
 import pytest
 
 from expenses.constants import ExpensePaymentMethodEnum
@@ -73,6 +75,79 @@ class TestParseShinhanParenBranch:
         # 이 location은 '(일시불)...' 포맷이 아니라 normalize 미적용(no-op).
         result = ParseSMSService(self.MESSAGE).parse()
         assert result["item"] == "동네카페"
+
+
+class TestParseShinhanOverseas:
+    """패턴3: '신한(xxxx)해외승인 ... KRW 금액 (국가)MM/DD HH:MM 가맹점 누적...'."""
+
+    MESSAGE = (
+        "[Web발신]\n"
+        "신한(4557)해외승인 강*성 KRW 37,730       (US)11/11 13:56 ELEVENLABS 누적1,682,643원"
+    )
+
+    def test_parses_amount_item_spent_at(self):
+        result = ParseSMSService(self.MESSAGE).parse()
+        assert result == {
+            "amount": 37730,
+            "item": "ELEVENLABS",
+            "payment_method": ExpensePaymentMethodEnum.SHINHAN.label,
+            "spent_at": "11/11",
+        }
+
+    def test_merchant_with_spaces_kept_whole(self):
+        message = (
+            "[Web발신]\n"
+            "신한(4557)해외승인 강*성 KRW 12,000 (GB)03/05 09:10 OPENAI CHATGPT SUBSCR 누적100,000원"
+        )
+        result = ParseSMSService(message).parse()
+        assert result["item"] == "OPENAI CHATGPT SUBSCR"
+        assert result["amount"] == 12000
+
+    def test_without_cumulative_suffix(self):
+        message = "[Web발신]\n신한(4557)해외승인 강*성 KRW 5,000 (US)11/11 13:56 NETFLIX.COM"
+        result = ParseSMSService(message).parse()
+        assert result["item"] == "NETFLIX.COM"
+
+    def test_dollar_amount_parsed_as_foreign(self):
+        # "[Web발신]" 뒤가 줄바꿈이 아니라 공백인 문자도 받는다.
+        message = (
+            "[Web발신] 신한(4557)해외승인 강*성 220.00 달러      (US)11/11 22:34 ANTHROPIC* 누적2,027,221원"
+        )
+        result = ParseSMSService(message).parse()
+        assert result == {
+            "amount": None,
+            "item": "ANTHROPIC*",
+            "payment_method": ExpensePaymentMethodEnum.SHINHAN.label,
+            "spent_at": "11/11",
+            "foreign_amount": Decimal("220.00"),
+            "currency": "USD",
+        }
+
+    def test_dollar_amount_with_thousands_separator(self):
+        message = "[Web발신]\n신한(4557)해외승인 강*성 1,250.50 달러 (US)11/11 22:34 APPLE.COM/BILL"
+        result = ParseSMSService(message).parse()
+        assert result["foreign_amount"] == Decimal("1250.50")
+        assert result["item"] == "APPLE.COM/BILL"
+
+    def test_dollar_cancellation_detected(self):
+        message = "[Web발신] 신한(4557)해외승인취소 강*성 220.00 달러 (US)11/11 22:34 ANTHROPIC* 누적1,807,221원"
+        assert ParseSMSService(message).is_cancellation() is True
+
+    def test_unknown_currency_rejected(self):
+        # 환산 방법을 모르는 표기는 파싱 실패로 둔다.
+        message = "[Web발신]\n신한(4557)해외승인 강*성 USD 26.00 (US)11/11 13:56 ELEVENLABS 누적1,682,643원"
+        with pytest.raises(ValueError):
+            ParseSMSService(message).parse()
+
+    def test_overseas_cancellation_detected(self):
+        message = (
+            "[Web발신]\n"
+            "신한(4557)해외승인취소 강*성 KRW 37,730 (US)11/11 13:56 ELEVENLABS 누적1,644,913원"
+        )
+        assert ParseSMSService(message).is_cancellation() is True
+
+    def test_overseas_approval_is_not_cancellation(self):
+        assert ParseSMSService(self.MESSAGE).is_cancellation() is False
 
 
 class TestParseWoori:

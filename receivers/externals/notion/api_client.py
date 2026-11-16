@@ -45,7 +45,7 @@ class NotionClient:
         카드 결제 정보를 Notion 데이터베이스에 새 페이지로 생성합니다.
 
         Args:
-            parse_result: amount, item, payment_method(label), spent_at(date)
+            parse_result: amount, item, payment_method(label), spent_at(date), memo(선택)
 
         Raises:
             RuntimeError: Notion API 요청 실패 시
@@ -66,7 +66,7 @@ class NotionClient:
                 "수입": {"number": 0},
                 "지출": {"number": amount},
                 "대분류": {"select": {"name": DEFAULT_EXPENSE_CATEGORY.label}},
-                "비고": {"rich_text": [{"text": {"content": ""}}]},
+                "비고": {"rich_text": [{"text": {"content": parse_result.get("memo", "")}}]},
             },
         }
         try:

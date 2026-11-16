@@ -1,11 +1,14 @@
 from datetime import date, datetime
+from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
 
 from expenses.constants import LOCAL_TIMEZONE, ExpensePaymentMethodEnum
 from expenses.models import Expense
+from receivers.externals.exchange_rate.api_client import ExchangeRateError
 from receivers.services.card_payment_service import (
+    convert_foreign_amount,
     record_card_payment,
     resolve_spent_at,
 )
@@ -66,4 +69,69 @@ class TestRecordCardPayment:
             with pytest.raises(RuntimeError):
                 record_card_payment(dict(self.PARSED))
 
+        assert not Expense.objects.exists()
+
+
+GET_KRW_RATE = (
+    "receivers.externals.exchange_rate.api_client.ExchangeRateClient.get_krw_rate"
+)
+NOTION_CREATE = "receivers.externals.notion.api_client.NotionClient.create_card_record"
+FOREIGN_PARSED = {
+    "amount": None,
+    "item": "ANTHROPIC*",
+    "payment_method": ExpensePaymentMethodEnum.SHINHAN.value,
+    "spent_at": "11/11",
+    "foreign_amount": Decimal("220.00"),
+    "currency": "USD",
+}
+
+
+class TestConvertForeignAmount:
+    def test_krw_parsed_passes_through_without_api_call(self):
+        parsed = {"amount": 37730, "item": "ELEVENLABS", "payment_method": "SH", "spent_at": "11/11"}
+        with patch(GET_KRW_RATE) as mock_rate:
+            assert convert_foreign_amount(parsed) is parsed
+        mock_rate.assert_not_called()
+
+    def test_converts_with_rate_and_leaves_memo(self):
+        with patch(GET_KRW_RATE, return_value=Decimal("1336.9")) as mock_rate:
+            record = convert_foreign_amount(dict(FOREIGN_PARSED))
+
+        mock_rate.assert_called_once_with("USD")
+        assert record["amount"] == 294118  # 220.00 * 1336.9 = 294,118
+        assert record["memo"] == "USD 220.00 (환율 1,336.90 적용)"
+        assert "foreign_amount" not in record and "currency" not in record
+
+    def test_rounds_half_up_to_won(self):
+        parsed = {**FOREIGN_PARSED, "foreign_amount": Decimal("0.50")}
+        with patch(GET_KRW_RATE, return_value=Decimal("1001")):
+            # 0.50 * 1001 = 500.5 → 501
+            assert convert_foreign_amount(parsed)["amount"] == 501
+
+
+@pytest.mark.django_db
+class TestRecordForeignCardPayment:
+    def test_expense_and_notion_get_krw_amount_and_memo(self):
+        with (
+            patch(GET_KRW_RATE, return_value=Decimal("1336.9")),
+            patch(NOTION_CREATE) as mock_create,
+        ):
+            expense = record_card_payment(dict(FOREIGN_PARSED))
+
+        expense.refresh_from_db()
+        assert expense.amount == 294118
+        assert expense.memo == "USD 220.00 (환율 1,336.90 적용)"
+        notion_record = mock_create.call_args.args[0]
+        assert notion_record["amount"] == 294118
+        assert notion_record["memo"] == expense.memo
+
+    def test_rate_failure_records_nothing(self):
+        with (
+            patch(GET_KRW_RATE, side_effect=ExchangeRateError("down")),
+            patch(NOTION_CREATE) as mock_create,
+        ):
+            with pytest.raises(ExchangeRateError):
+                record_card_payment(dict(FOREIGN_PARSED))
+
+        mock_create.assert_not_called()
         assert not Expense.objects.exists()

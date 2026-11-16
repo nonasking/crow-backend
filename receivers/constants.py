@@ -3,6 +3,7 @@ class ParseSMSErrorMessages:
     INVALID_JSON = "Invalid JSON"
     PARSE_FAILED = "메시지 파싱 실패: "
     NOTION_FAILED = "Notion 업로드 실패"
+    EXCHANGE_RATE_FAILED = "환율 조회 실패"
     INVALID_FORMAT = "메시지 형식이 잘못되었습니다"
     UNSUPPORTED_COMPANY = "지원하지 않는 카드사입니다"
     EMPTY_ITEM = "가맹점명을 찾을 수 없습니다"

@@ -201,6 +201,13 @@ SPECTACULAR_SETTINGS = {
 SMS_WEBHOOK_TOKEN = env("SMS_WEBHOOK_TOKEN", default="")
 
 
+# 환율 조회 (receivers.externals.exchange_rate). 해외승인 문자의 외화 금액을 원화로 환산한다.
+# 기본값은 Frankfurter(ECB 기준환율, API 키 불필요).
+EXCHANGE_RATE_API_URL = env(
+    "EXCHANGE_RATE_API_URL", default="https://api.frankfurter.dev/v1/latest"
+)
+
+
 # Notion settings
 NOTION_TOKEN = env('NOTION_TOKEN')
 NOTION_EXPENSE_DATABASE_ID = env('NOTION_EXPENSE_DATABASE_ID')

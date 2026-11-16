@@ -8,6 +8,7 @@ from django.db import DatabaseError
 from rest_framework import status
 
 from expenses.models import Expense
+from receivers.externals.exchange_rate.api_client import ExchangeRateError
 from receivers.throttling import SMSWebhookThrottle
 
 URL = "/receivers/webhook/"
@@ -106,6 +107,21 @@ class TestWebhookFailures:
             with pytest.raises(DatabaseError):
                 _post(client)
         mock_create.assert_not_called()
+
+    def test_exchange_rate_failure_returns_503(self, client):
+        message = "[Web발신] 신한(4557)해외승인 강*성 220.00 달러 (US)11/11 22:34 ANTHROPIC* 누적2,027,221원"
+        with (
+            patch(
+                "receivers.externals.exchange_rate.api_client.ExchangeRateClient.get_krw_rate",
+                side_effect=ExchangeRateError("down"),
+            ),
+            patch(NOTION_CREATE) as mock_create,
+        ):
+            response = _post(client, message=message)
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert "환율" in str(response.json())
+        mock_create.assert_not_called()
+        assert not Expense.objects.exists()
 
 
 @pytest.fixture
